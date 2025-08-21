@@ -1,0 +1,19 @@
+services:
+  orchestrator:
+    build:
+      context: ../
+      dockerfile: infra/orchestrator.Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - PYTHONUNBUFFERED=1
+
+  kali_agent:
+    build:
+      context: ../
+      dockerfile: infra/agent.Dockerfile
+    environment:
+      - ORCH_URL=http://orchestrator:8080
+      - TENANT_ID=t_demo
+    depends_on:
+      - orchestrator

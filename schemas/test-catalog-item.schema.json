@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TestCatalogItem",
+  "type": "object",
+  "required": [
+    "id",
+    "name",
+    "category",
+    "risk_tier",
+    "description",
+    "requires",
+    "estimator",
+    "tool_adapter"
+  ],
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "Network",
+        "Web",
+        "API",
+        "Mobile",
+        "Code",
+        "Cloud"
+      ]
+    },
+    "risk_tier": {
+      "type": "string",
+      "enum": [
+        "recon",
+        "safe_active",
+        "intrusive",
+        "exploit_proof_only"
+      ]
+    },
+    "description": {
+      "type": "string"
+    },
+    "prerequisites": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "exclusive_with": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "requires": {
+      "type": "object",
+      "properties": {
+        "agents": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "optional_inputs": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "estimator": {
+      "type": "object",
+      "required": [
+        "time_per_host_sec",
+        "cost_units"
+      ],
+      "properties": {
+        "time_per_host_sec": {
+          "type": "number"
+        },
+        "cost_units": {
+          "type": "number"
+        }
+      }
+    },
+    "outputs": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "tool_adapter": {
+      "type": "string"
+    },
+    "evidence_retention": {
+      "type": "string"
+    },
+    "policy_tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

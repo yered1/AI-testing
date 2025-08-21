@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "PlanDSL",
+  "type": "object",
+  "required": [
+    "engagement_id",
+    "steps",
+    "catalog_version"
+  ],
+  "properties": {
+    "engagement_id": {
+      "type": "string"
+    },
+    "catalog_version": {
+      "type": "string"
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "test_id",
+          "tool_adapter",
+          "risk_tier",
+          "params"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "test_id": {
+            "type": "string"
+          },
+          "tool_adapter": {
+            "type": "string"
+          },
+          "risk_tier": {
+            "type": "string",
+            "enum": [
+              "recon",
+              "safe_active",
+              "intrusive",
+              "exploit_proof_only",
+              "post_ex"
+            ]
+          },
+          "params": {
+            "type": "object"
+          },
+          "agent_constraints": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "outputs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "depends_on": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}

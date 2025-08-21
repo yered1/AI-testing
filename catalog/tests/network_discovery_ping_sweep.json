@@ -1,0 +1,39 @@
+{
+  "id": "network.discovery.ping_sweep",
+  "name": "Host Discovery (ICMP/ARP)",
+  "category": "Network",
+  "risk_tier": "recon",
+  "description": "Discover live hosts in-scope via ICMP/ARP.",
+  "prerequisites": [],
+  "exclusive_with": [],
+  "requires": {
+    "agents": [
+      "kali_gateway"
+    ],
+    "capabilities": [
+      "net_raw"
+    ],
+    "inputs": []
+  },
+  "optional_inputs": [
+    {
+      "key": "rate_limit_rps",
+      "type": "number",
+      "min": 1,
+      "max": 200,
+      "default": 50
+    }
+  ],
+  "estimator": {
+    "time_per_host_sec": 5,
+    "cost_units": 1
+  },
+  "outputs": [
+    "hosts"
+  ],
+  "tool_adapter": "kalitool-fping@1.0.0",
+  "evidence_retention": "short",
+  "policy_tags": [
+    "scoped-network-only"
+  ]
+}
