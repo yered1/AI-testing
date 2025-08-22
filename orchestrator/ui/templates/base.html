@@ -1,0 +1,26 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>AI Testing Orchestrator</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="/ui/static/app.css" rel="stylesheet">
+</head>
+<body>
+  <header>
+    <h1>AI Testing Orchestrator</h1>
+    <nav>
+      <a href="/ui">Home</a>
+      <a href="/ui/new">New Engagement</a>
+      <a href="/ui/admin">Admin</a>
+    </nav>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+  <footer>
+    <small>v0.9.7 UI — uses your existing API & auth</small>
+  </footer>
+  <script src="/ui/static/app.js"></script>
+</body>
+</html>
