@@ -1,0 +1,9 @@
+{
+  "id": "pack.owasp_web_core",
+  "name": "OWASP Web Core",
+  "description": "Core dynamic crawl + OWASP Top 10 checks",
+  "tests": [
+    "web.crawling.dynamic",
+    "web.owasp.top10.core"
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "id": "network.enum.smb",
+  "name": "SMB Enumeration",
+  "category": "Network",
+  "risk_tier": "safe_active",
+  "description": "Enumerate SMB shares and users where exposed.",
+  "prerequisites": [
+    "network.nmap.tcp_top_1000"
+  ],
+  "exclusive_with": [],
+  "requires": {
+    "agents": [
+      "kali_gateway"
+    ],
+    "capabilities": [],
+    "inputs": []
+  },
+  "optional_inputs": [],
+  "estimator": {
+    "time_per_host_sec": 30,
+    "cost_units": 2
+  },
+  "outputs": [
+    "shares",
+    "users"
+  ],
+  "tool_adapter": "kalitool-enum4linux@1.0.0",
+  "evidence_retention": "short",
+  "policy_tags": [
+    "scoped-network-only"
+  ]
+}

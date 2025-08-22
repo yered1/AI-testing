@@ -1,0 +1,9 @@
+{
+  "id": "pack.api_minimal",
+  "name": "API Minimal Regression",
+  "description": "OpenAPI conformance + basic authZ fuzz",
+  "tests": [
+    "api.schema.conformance",
+    "api.auth.fuzz"
+  ]
+}
