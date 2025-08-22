@@ -1,0 +1,7 @@
+{
+  "id": "default_code_review",
+  "title": "Default \u2014 Code Review",
+  "tests": [
+    "code_semgrep_default"
+  ]
+}

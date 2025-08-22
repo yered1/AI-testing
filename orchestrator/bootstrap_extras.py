@@ -17,3 +17,10 @@ app.include_router(v2_reports_bundle.router, tags=["reports"])
 # --- v0.9.7 UI include ---
 from .routers import ui_pages as ui_pages_router
 app.include_router(ui_pages_router.router, tags=["ui"])\ntry:\n    ui_pages_router.mount_static(app)\nexcept Exception:\n    pass\n
+from .routers import v2_artifacts_downloads
+
+from .routers import ui_code
+
+app.include_router(v2_artifacts_downloads.router, tags=["artifacts"])
+
+app.include_router(ui_code.router, tags=["ui"])
