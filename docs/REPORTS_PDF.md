@@ -1,13 +1,7 @@
-# PDF Reports (additive microservice)
+# PDF Reports (additive)
 
-Run the **Reporter** service (wkhtmltopdf inside a container), then convert the API's HTML report to PDF.
+Two options:
+1) **Script** (recommended): Start reporter with `docker compose -f infra/docker-compose.reports.yml up -d reporter` then run `scripts/render_pdf_from_api.sh <RUN_ID>`.
+2) **API**: POST to `http://localhost:8082/render/pdf` with `{"url": "http://orchestrator:8080/v2/reports/run/<RUN>.html"}` or raw `html`.
 
-```bash
-# Start reporter (one time)
-docker compose -f infra/docker-compose.reports.yml up --build -d reporter
-
-# Generate PDF for a run
-bash scripts/render_pdf_from_api.sh RUN_ID
-```
-
-This avoids modifying the Orchestrator image and keeps dependencies isolated.
+The reporter isolates wkhtmltopdf dependencies from your orchestrator image.

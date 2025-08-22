@@ -1,18 +1,14 @@
-# Auth Setup (OIDC + MFA via oauth2-proxy) — Additive
+# OIDC/MFA via oauth2-proxy + Nginx (additive)
 
-This stack puts **oauth2-proxy** and **Nginx** in front of the Orchestrator. Your IdP (Okta / Azure AD / Google) handles **OIDC + MFA**; oauth2-proxy injects headers that the Orchestrator already accepts in dev mode (`X-Dev-User`, `X-Dev-Email`, `X-Tenant-Id`).
+This stack puts an auth gate in front of the orchestrator without changing backend code.
 
 ## Steps
-1. Copy and edit env:
-   ```bash
-   cp infra/auth/.env.auth.example infra/auth/.env.auth
-   # fill CLIENT_ID, CLIENT_SECRET, OIDC_ISSUER_URL, COOKIE_SECRET, etc.
-   ```
-2. Start auth stack:
-   ```bash
-   docker compose -f infra/docker-compose.v2.yml -f infra/docker-compose.auth.yml up -d reverse-proxy oauth2-proxy
-   open http://localhost:8081
-   ```
-3. In production, remove `X-Dev-*` bypass and map IdP claims to tenant header, or persist tenants per user in DB.
+1. `cp infra/auth/.env.auth.example infra/auth/.env.auth` and fill issuer/client/secret/cookie secret.
+2. Start: `docker compose -f infra/docker-compose.v2.yml -f infra/docker-compose.auth.yml up -d reverse-proxy oauth2-proxy`
+3. Visit `http://localhost:8081` — you'll be redirected to your IdP (with MFA if configured).
+4. The proxy maps IdP headers to backend dev headers:
+   - `X-Auth-Request-User` → `X-Dev-User`
+   - `X-Auth-Request-Email` → `X-Dev-Email`
+   - `X-Tenant-Id` defaults to `t_demo` (adjust Nginx config).
 
-> This is additive: no change to Orchestrator image required.
+In production, map tenant from a claim (e.g., `org_id`) and turn off any dev bypass on the backend.
