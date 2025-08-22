@@ -28,7 +28,7 @@ env = Environment(
     autoescape=select_autoescape(enabled_extensions=("html",))
 )
 
-app = FastAPI(title="AI Testing Orchestrator (v2)", version="0.8.0")
+app = FastAPI(title="AI Testing Orchestrator (v2)", version="0.8.1")
 
 app.add_middleware(
     CORSMiddleware,
@@ -129,7 +129,6 @@ def plan_validate(engagement_id: str, body: Selection, db: Session = Depends(get
     usage = sum_usage(db, e["tenant_id"])
     over_month = usage + credits > quota["monthly_budget"]
     over_plan = credits > quota["per_plan_cap"]
-    # OPA best-effort
     denies = []
     try:
         import requests
@@ -148,7 +147,7 @@ def plan_create(engagement_id: str, body: Selection, db: Session = Depends(get_d
     data = {"steps": [{"id": (t.get("id") or t.get("test_id")), "params": t.get("params", {}), "tool_adapter": t.get("tool_adapter")} for t in body.selected_tests]}
     pid = f"plan_{uuid.uuid4().hex[:12]}"
     db.execute(text("INSERT INTO plans (id, tenant_id, engagement_id, plan_hash, data, catalog_version) VALUES (:id,:t,:e,:h,:d,'0.1.0')"),
-               {"id": pid, "t": e["tenant_id"], "e": e["id"], "h": hashlib.sha256(json.dumps(data).encode()).hexdigest(), "d": json.dumps(data)})
+               {"id": pid, "t": e["tenant_id"], "e": e["id"], "h": sha256_hex(json.dumps(data)), "d": json.dumps(data)})
     db.commit()
     return {"id": pid, "engagement_id": e["id"], "data": data}
 
@@ -227,7 +226,6 @@ def start_test(body: StartTestIn, db: Session = Depends(get_db), principal: Prin
     db.execute(text("INSERT INTO runs (id, tenant_id, engagement_id, plan_id, status) VALUES (:id,:t,:e,:p,'running')"),
                {"id": rid, "t": e["tenant_id"], "e": e["id"], "p": p["id"]})
     insert_event(db, e["tenant_id"], rid, "run.started", {"plan_id": p["id"]})
-    # Create jobs per step (if jobs table exists)
     try:
         steps = (p["data"] or {}).get("steps", [])
         for idx, step in enumerate(steps):
@@ -376,14 +374,14 @@ def create_agent_token(body: AgentTokenIn, db: Session = Depends(get_db), princi
     db.execute(text(f"""
         INSERT INTO agent_tokens (id, tenant_id, name, token_hash, expires_at, status, created_by)
         VALUES (:id, :t, :n, :h, {exp}, 'active', NULL)
-    """), {"id": aid, "t": body.tenant_id, "n": body.name, "h": hashlib.sha256(raw.encode()).hexdigest()})
+    """), {"id": aid, "t": body.tenant_id, "n": body.name, "h": sha256_hex(raw)})
     db.commit()
     return {"id": aid, "token": raw}
 
 def require_agent(db: Session, tenant_id: str, agent_id: str, agent_key: str):
     set_tenant(db, tenant_id)
     row = db.execute(text("SELECT id, agent_key_hash FROM agents WHERE id=:id"), {"id": agent_id}).mappings().first()
-    if not row or row["agent_key_hash"] != hashlib.sha256(agent_key.encode()).hexdigest():
+    if not row or row["agent_key_hash"] != sha256_hex(agent_key):
         raise HTTPException(status_code=401, detail="invalid agent credentials")
 
 class AgentRegisterIn(BaseModel):
@@ -396,13 +394,13 @@ def agent_register(body: AgentRegisterIn, x_tenant_id: str = Header(alias="X-Ten
     set_tenant(db, x_tenant_id)
     rows = db.execute(text("SELECT token_hash FROM agent_tokens WHERE tenant_id=:t AND status='active' ORDER BY created_at DESC"),
                       {"t": x_tenant_id}).mappings().all()
-    th = hashlib.sha256(body.enroll_token.encode()).hexdigest()
+    th = sha256_hex(body.enroll_token)
     match = [r for r in rows if r["token_hash"] == th]
     if not match: raise HTTPException(status_code=401, detail="invalid enroll token")
     agent_id = f"agt_{uuid.uuid4().hex[:10]}"
     agent_key = uuid.uuid4().hex + uuid.uuid4().hex
     db.execute(text("INSERT INTO agents (id, tenant_id, name, kind, status, agent_key_hash) VALUES (:id,:t,:n,:k,'online',:h)"),
-               {"id": agent_id, "t": x_tenant_id, "n": body.name, "k": body.kind, "h": hashlib.sha256(agent_key.encode()).hexdigest()})
+               {"id": agent_id, "t": x_tenant_id, "n": body.name, "k": body.kind, "h": sha256_hex(agent_key)})
     db.execute(text("UPDATE agent_tokens SET used_at=now() WHERE token_hash=:h"), {"h": th})
     db.commit()
     return {"agent_id": agent_id, "agent_key": agent_key}
