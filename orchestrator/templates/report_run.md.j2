@@ -1,39 +1,23 @@
-{% set counts = {'total': findings|length, 'critical':0,'high':0,'medium':0,'low':0,'info':0} %}
-{% for f in findings %}{% set _ = counts.__setitem__(f.severity, counts.get(f.severity,0)+1) %}{% endfor %}
-# Pentest Report — Run {{ run_id }}
+# Engagement Report — Run {{ run_id }}
 
-**Engagement:** {{ engagement_id }}  
-**Generated:** {{ generated_at }} UTC
+**Engagement**: {{ engagement.name }} ({{ engagement.type }})
 
-## Summary
-- Total findings: {{ counts.total }}
-- Critical: {{ counts.critical }} | High: {{ counts.high }} | Medium: {{ counts.medium }} | Low: {{ counts.low }} | Info: {{ counts.info }}
+## Plan Steps
+{% for s in plan.steps %}
+- {{ s.id }} {% if s.params %}params={{ s.params }}{% endif %}
+{% endfor %}
 
 ## Findings
+{% if findings %}
 {% for f in findings %}
-### [{{ f.severity|upper }}] {{ f.title }}
-**Finding ID:** {{ f.id }}  
-**Status:** {{ f.status }}  
-**Description:**  
-{{ f.description or "—" }}
+### {{ f.title }} — {{ f.severity|upper }}
+{{ f.description }}
 
-**Affected Assets:**  
-```json
-{{ (f.assets or {}) | tojson(indent=2) }}
-```
+**Assets**: `{{ f.assets }}`
+**Recommendation**: {{ f.recommendation or '—' }}
+**Tags**: `{{ f.tags }}`
 
-**Tags:** {{ f.tags or {} }}  
-**CVSS:** {{ f.cvss_score or "—" }} {{ f.cvss_vector or "" }}
-
-**Recommendation:**  
-{{ f.recommendation or "—" }}
-
-{% if f.artifacts and f.artifacts|length > 0 %}
-**Artifacts:**  
-{% for a in f.artifacts %}
-- {{ a.filename }} ({{ a.content_type or "application/octet-stream" }}, {{ a.size or "?" }} bytes) — {{ a.path }}
 {% endfor %}
+{% else %}
+_No findings recorded._
 {% endif %}
-
----
-{% endfor %}

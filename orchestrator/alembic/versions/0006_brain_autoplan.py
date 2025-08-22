@@ -35,11 +35,11 @@ def upgrade():
 
     for tbl in ["brain_feedback","brain_logs"]:
         op.execute(f'ALTER TABLE "{tbl}" ENABLE ROW LEVEL SECURITY;')
-        op.execute(f'''
+        op.execute(f"""
         CREATE POLICY {tbl}_tenant_isolation ON "{tbl}"
-        USING (tenant_id::text = current_setting(''app.current_tenant'', true))
-        WITH CHECK (tenant_id::text = current_setting(''app.current_tenant'', true));
-        ''')
+        USING (tenant_id::text = current_setting('app.current_tenant', true))
+        WITH CHECK (tenant_id::text = current_setting('app.current_tenant', true));
+        """)
 
 def downgrade():
     for tbl in ["brain_logs","brain_feedback"]:

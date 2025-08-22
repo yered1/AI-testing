@@ -1,7 +1,7 @@
-import os, time, json, uuid, requests, hashlib, datetime
+import os, time, json, uuid, requests, datetime
 
-ORCH = os.environ.get("ORCH_URL", "http://localhost:8080")
-TENANT = os.environ.get("TENANT_ID", "t_demo")
+ORCH = os.environ.get("ORCH_URL","http://localhost:8080")
+TENANT = os.environ.get("TENANT_ID","t_demo")
 AGENT_NAME = os.environ.get("AGENT_NAME", f"devagent-{uuid.uuid4().hex[:6]}")
 ENROLL_TOKEN = os.environ.get("AGENT_TOKEN", "")
 
@@ -29,9 +29,7 @@ def hdr():
 def lease_and_run():
     while True:
         try:
-            # heartbeat
             requests.post(f"{ORCH}/v2/agents/heartbeat", headers=hdr(), timeout=10)
-            # lease
             lr = requests.post(f"{ORCH}/v2/agents/lease", headers=hdr(), json={"kinds":["cross_platform"]}, timeout=20)
             if lr.status_code == 204:
                 time.sleep(2); continue
@@ -41,11 +39,7 @@ def lease_and_run():
             adapter = job["adapter"]
             params = job.get("params", {})
             requests.post(f"{ORCH}/v2/jobs/{job_id}/events", headers=hdr(), json={"type":"job.started","payload":{"adapter":adapter}}, timeout=10)
-
-            # DEMO: adapters are simulated safely
-            output = {"adapter": adapter, "echo": params, "ts": datetime.datetime.utcnow().isoformat()+"Z"}
-
-            # report completion
+            output = {"adapter": adapter, "params": params, "ts": datetime.datetime.utcnow().isoformat()+"Z"}
             requests.post(f"{ORCH}/v2/jobs/{job_id}/complete", headers=hdr(), json={"status":"succeeded","result":output}, timeout=10)
         except Exception as e:
             print("[agent] error:", e)

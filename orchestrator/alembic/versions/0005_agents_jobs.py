@@ -63,21 +63,19 @@ def upgrade():
     )
     op.create_index("ix_job_events_job_time", "job_events", ["job_id","created_at"])
 
-    # RLS
     for tbl in ["agent_tokens","agents","jobs","job_events"]:
         op.execute(f'ALTER TABLE "{tbl}" ENABLE ROW LEVEL SECURITY;')
-        op.execute(f'''
+        op.execute(f"""
         CREATE POLICY {tbl}_tenant_isolation ON "{tbl}"
-        USING (tenant_id::text = current_setting(''app.current_tenant'', true))
-        WITH CHECK (tenant_id::text = current_setting(''app.current_tenant'', true));
-        ''')
+        USING (tenant_id::text = current_setting('app.current_tenant', true))
+        WITH CHECK (tenant_id::text = current_setting('app.current_tenant', true));
+        """)
 
 def downgrade():
     for tbl in ["job_events","jobs","agents","agent_tokens"]:
         try:
             op.execute(f'DROP POLICY IF EXISTS {tbl}_tenant_isolation ON "{tbl}";')
-        except Exception:
-            pass
+        except Exception: pass
     op.drop_index("ix_job_events_job_time", table_name="job_events")
     op.drop_table("job_events")
     op.drop_index("ix_jobs_run_order", table_name="jobs")
