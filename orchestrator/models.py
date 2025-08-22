@@ -1,5 +1,5 @@
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import String, Text, Enum, JSON, ForeignKey, UniqueConstraint, Index, Boolean, DateTime, func
+from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import String, JSON, ForeignKey, Enum, DateTime, func
 import enum
 from .db import Base
 
@@ -21,37 +21,35 @@ class Tenant(Base):
 
 class User(Base):
     __tablename__ = "users"
-    id: Mapped[str] = mapped_column(String, primary_key=True)   # internal id (uuid)
-    subject: Mapped[str] = mapped_column(String, unique=True)   # OIDC sub
-    email: Mapped[str] = mapped_column(String, index=True)
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    subject: Mapped[str] = mapped_column(String, unique=True)
+    email: Mapped[str] = mapped_column(String)
     name: Mapped[str] = mapped_column(String, default="")
     created_at: Mapped["DateTime"] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 class Membership(Base):
     __tablename__ = "memberships"
     id: Mapped[str] = mapped_column(String, primary_key=True)
-    tenant_id: Mapped[str] = mapped_column(String, ForeignKey("tenants.id", ondelete="CASCADE"), index=True)
-    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    role: Mapped[Role] = mapped_column(Enum(Role))
+    tenant_id: Mapped[str] = mapped_column(String, ForeignKey("tenants.id", ondelete="CASCADE"))
+    user_id: Mapped[str] = mapped_column(String, ForeignKey("users.id", ondelete="CASCADE"))
+    role: Mapped["Role"] = mapped_column(Enum(Role))
     created_at: Mapped["DateTime"] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    __table_args__ = (UniqueConstraint("tenant_id","user_id", name="uq_member"),)
 
 class Engagement(Base):
     __tablename__ = "engagements"
     id: Mapped[str] = mapped_column(String, primary_key=True)
-    tenant_id: Mapped[str] = mapped_column(String, ForeignKey("tenants.id", ondelete="CASCADE"), index=True)
+    tenant_id: Mapped[str] = mapped_column(String, ForeignKey("tenants.id", ondelete="CASCADE"))
     name: Mapped[str] = mapped_column(String)
-    type: Mapped[str] = mapped_column(String)  # network|webapp|api|mobile|code|cloud
+    type: Mapped[str] = mapped_column(String)
     scope: Mapped[dict] = mapped_column(JSON)
     created_at: Mapped["DateTime"] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    Index("ix_engagements_tenant", "tenant_id")
 
 class Plan(Base):
     __tablename__ = "plans"
     id: Mapped[str] = mapped_column(String, primary_key=True)
-    tenant_id: Mapped[str] = mapped_column(String, ForeignKey("tenants.id", ondelete="CASCADE"), index=True)
-    engagement_id: Mapped[str] = mapped_column(String, ForeignKey("engagements.id", ondelete="CASCADE"), index=True)
-    plan_hash: Mapped[str] = mapped_column(String, index=True)
+    tenant_id: Mapped[str] = mapped_column(String, ForeignKey("tenants.id", ondelete="CASCADE"))
+    engagement_id: Mapped[str] = mapped_column(String, ForeignKey("engagements.id", ondelete="CASCADE"))
+    plan_hash: Mapped[str] = mapped_column(String)
     data: Mapped[dict] = mapped_column(JSON)
     catalog_version: Mapped[str] = mapped_column(String, default="0.1.0")
     created_at: Mapped["DateTime"] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -59,8 +57,8 @@ class Plan(Base):
 class Run(Base):
     __tablename__ = "runs"
     id: Mapped[str] = mapped_column(String, primary_key=True)
-    tenant_id: Mapped[str] = mapped_column(String, ForeignKey("tenants.id", ondelete="CASCADE"), index=True)
-    engagement_id: Mapped[str] = mapped_column(String, ForeignKey("engagements.id", ondelete="CASCADE"), index=True)
-    plan_id: Mapped[str] = mapped_column(String, ForeignKey("plans.id", ondelete="CASCADE"), index=True)
+    tenant_id: Mapped[str] = mapped_column(String, ForeignKey("tenants.id", ondelete="CASCADE"))
+    engagement_id: Mapped[str] = mapped_column(String, ForeignKey("engagements.id", ondelete="CASCADE"))
+    plan_id: Mapped[str] = mapped_column(String, ForeignKey("plans.id", ondelete="CASCADE"))
     status: Mapped[str] = mapped_column(String, default="queued")
     created_at: Mapped["DateTime"] = mapped_column(DateTime(timezone=True), server_default=func.now())

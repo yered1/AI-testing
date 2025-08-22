@@ -1,5 +1,4 @@
 from pydantic_settings import BaseSettings
-from pydantic import AnyUrl
 
 class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://app:app@localhost:5432/ai_testing"
