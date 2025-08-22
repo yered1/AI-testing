@@ -1,0 +1,14 @@
+services:
+  ui:
+    build:
+      context: ../ui
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    environment:
+      - VITE_ORCH_URL=http://orchestrator:8080
+      - VITE_DEV_USER=yered
+      - VITE_DEV_EMAIL=yered@example.com
+      - VITE_TENANT_ID=t_demo
+    depends_on:
+      - orchestrator

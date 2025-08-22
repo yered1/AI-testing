@@ -181,3 +181,209 @@ def report_html(run_id: str, db: Session = Depends(get_db), principal: Principal
     tmpl = env.get_template("report_run.html.j2")
     html = tmpl.render(**data)
     return Response(content=html, media_type="text/html")
+
+# --- Batch 5 overlay (append to orchestrator/app_v2.py) ---
+import base64
+from fastapi import Body
+
+ARTIFACT_DIR = os.environ.get("ARTIFACT_DIR","/app/data/artifacts")
+os.makedirs(ARTIFACT_DIR, exist_ok=True)
+
+def finding_hash(title: str, category: str | None, assets: dict | None) -> str:
+    payload = json.dumps({"t": title, "c": category, "a": assets or {}}, sort_keys=True)
+    return hashlib.sha256(payload.encode()).hexdigest()[:16]
+
+def create_artifact(db: Session, tenant_id: str, run_id: str, filename: str, b64: str, mime: str | None, kind="file") -> str:
+    set_tenant_guc(db, tenant_id)
+    raw = base64.b64decode(b64.encode())
+    aid = f"af_{uuid.uuid4().hex[:10]}"
+    # Write file
+    path = os.path.join(ARTIFACT_DIR, f"{aid}_{filename}")
+    with open(path, "wb") as f:
+        f.write(raw)
+    db.execute(
+        text("INSERT INTO artifacts (id, tenant_id, run_id, kind, uri, mime, metadata) VALUES (:id,:t,:r,:k,:u,:m,:md)"),
+        {"id": aid, "t": tenant_id, "r": run_id, "k": kind, "u": path, "m": mime, "md": json.dumps({})}
+    )
+    db.commit()
+    return aid, path
+
+class EvidenceItem(BaseModel):
+    filename: str
+    content_base64: str
+    mime: Optional[str] = None
+
+class FindingIn(BaseModel):
+    title: str
+    severity: str  # info|low|medium|high|critical
+    category: Optional[str] = None
+    cwe: Optional[str] = None
+    owasp: Optional[str] = None
+    cvss: Optional[float] = None
+    affected_assets: Optional[dict] = None
+    description: Optional[str] = None
+    recommendation: Optional[str] = None
+    evidence: Optional[List[EvidenceItem]] = None
+
+class FindingsIngest(BaseModel):
+    findings: List[FindingIn]
+
+@app.post("/v2/runs/{run_id}/findings:ingest")
+def ingest_findings(run_id: str, body: FindingsIngest, db: Session = Depends(get_db), principal: Principal = Depends(require_tenant)):
+    r = db.execute(select(Run).where(Run.id == run_id)).scalar_one_or_none()
+    if not r:
+        raise HTTPException(status_code=404, detail="run not found")
+    set_tenant_guc(db, r.tenant_id)
+
+    created = []
+    for f in body.findings:
+        h = finding_hash(f.title, f.category, f.affected_assets)
+        fid = f"fd_{uuid.uuid4().hex[:10]}"
+        # insert finding
+        db.execute(
+            text("""
+                INSERT INTO findings (
+                    id, tenant_id, engagement_id, run_id, hash, title, severity, category, cwe, owasp, cvss,
+                    affected_assets, description, recommendation
+                ) VALUES (
+                    :id, :t, :e, :r, :h, :ti, :sev, :cat, :cwe, :ow, :cvss, :assets, :desc, :rec
+                )
+            """),
+            {
+                "id": fid, "t": r.tenant_id, "e": r.engagement_id, "r": r.id, "h": h, "ti": f.title,
+                "sev": f.severity, "cat": f.category, "cwe": f.cwe, "ow": f.owasp, "cvss": f.cvss,
+                "assets": json.dumps(f.affected_assets), "desc": f.description, "rec": f.recommendation
+            }
+        )
+        # evidence
+        if f.evidence:
+            for ev in f.evidence:
+                aid, path = create_artifact(db, r.tenant_id, r.id, ev.filename, ev.content_base64, ev.mime)
+                db.execute(
+                    text("INSERT INTO evidence_links (id, tenant_id, finding_id, artifact_id) VALUES (:id,:t,:f,:a)"),
+                    {"id": f"el_{uuid.uuid4().hex[:10]}", "t": r.tenant_id, "f": fid, "a": aid}
+                )
+        db.commit()
+        created.append({"id": fid, "hash": h})
+
+    insert_event(db, r.tenant_id, r.id, "findings.ingested", {"count": len(created)})
+    return {"ok": True, "created": created}
+
+@app.get("/v2/runs/{run_id}/findings")
+def list_run_findings(run_id: str, db: Session = Depends(get_db), principal: Principal = Depends(require_tenant)):
+    r = db.execute(select(Run).where(Run.id == run_id)).scalar_one_or_none()
+    if not r:
+        raise HTTPException(status_code=404, detail="run not found")
+    set_tenant_guc(db, r.tenant_id)
+    rows = db.execute(
+        text("""
+            SELECT id, title, severity, category, cwe, owasp, cvss, affected_assets, state, created_at
+            FROM findings WHERE run_id=:r ORDER BY severity DESC, created_at DESC
+        """),
+        {"r": run_id}
+    ).mappings().all()
+    return {"findings": [dict(x) for x in rows]}
+
+@app.get("/v2/engagements/{engagement_id}/findings")
+def list_eng_findings(engagement_id: str, db: Session = Depends(get_db), principal: Principal = Depends(require_tenant)):
+    e = db.execute(select(Engagement).where(Engagement.id == engagement_id)).scalar_one_or_none()
+    if not e:
+        raise HTTPException(status_code=404, detail="engagement not found")
+    set_tenant_guc(db, e.tenant_id)
+    rows = db.execute(
+        text("""
+            SELECT id, title, severity, category, cwe, owasp, cvss, affected_assets, state, created_at, run_id
+            FROM findings WHERE engagement_id=:e ORDER BY created_at DESC
+        """),
+        {"e": engagement_id}
+    ).mappings().all()
+    return {"findings": [dict(x) for x in rows]}
+
+@app.get("/v2/findings/{finding_id}")
+def get_finding(finding_id: str, db: Session = Depends(get_db), principal: Principal = Depends(require_tenant)):
+    row = db.execute(
+        text("""
+            SELECT tenant_id, id, title, severity, category, cwe, owasp, cvss, affected_assets, description, recommendation, state, run_id, engagement_id
+            FROM findings WHERE id=:id
+        """),
+        {"id": finding_id}
+    ).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="not found")
+    set_tenant_guc(db, row["tenant_id"])
+    art = db.execute(
+        text("""
+            SELECT a.id, a.kind, a.uri, a.mime FROM artifacts a
+            JOIN evidence_links e ON e.artifact_id = a.id
+            WHERE e.finding_id=:f
+        """),
+        {"f": finding_id}
+    ).mappings().all()
+    data = dict(row)
+    data["artifacts"] = [dict(x) for x in art]
+    return data
+
+class FindingStateIn(BaseModel):
+    state: str  # open|accepted|resolved|false_positive
+
+@app.post("/v2/findings/{finding_id}/state")
+def update_finding_state(finding_id: str, body: FindingStateIn, db: Session = Depends(get_db), principal: Principal = Depends(require_tenant)):
+    row = db.execute(text("SELECT tenant_id FROM findings WHERE id=:id"), {"id": finding_id}).mappings().first()
+    if not row:
+        raise HTTPException(status_code=404, detail="not found")
+    set_tenant_guc(db, row["tenant_id"])
+    if body.state not in ("open","accepted","resolved","false_positive"):
+        raise HTTPException(status_code=400, detail="invalid state")
+    db.execute(text("UPDATE findings SET state=:s, updated_at=now() WHERE id=:id"), {"s": body.state, "id": finding_id})
+    db.commit()
+    return {"ok": True, "id": finding_id, "state": body.state}
+
+def severity_rank(s: str) -> int:
+    order = {"critical":4,"high":3,"medium":2,"low":1,"info":0}
+    return order.get(s,0)
+
+@app.get("/v2/reports/{run_id}.json")
+def report_json(run_id: str, db: Session = Depends(get_db), principal: Principal = Depends(require_tenant)):
+    r = db.execute(select(Run).where(Run.id == run_id)).scalar_one_or_none()
+    if not r:
+        raise HTTPException(status_code=404, detail="run not found")
+    set_tenant_guc(db, r.tenant_id)
+    eng = db.execute(select(Engagement).where(Engagement.id == r.engagement_id)).scalar_one()
+    rows = db.execute(
+        text("""
+            SELECT id, title, severity, category, cwe, owasp, cvss, affected_assets, description, recommendation, state
+            FROM findings WHERE run_id=:r
+        """),
+        {"r": run_id}
+    ).mappings().all()
+    findings = sorted([dict(x) for x in rows], key=lambda x: -severity_rank(x["severity"]))
+    return {"run_id": run_id, "engagement": {"id": eng.id, "name": eng.name, "type": eng.type, "scope": eng.scope}, "findings": findings}
+
+@app.get("/v2/reports/{run_id}.md")
+def report_md(run_id: str, db: Session = Depends(get_db), principal: Principal = Depends(require_tenant)):
+    data = report_json(run_id, db, principal)
+    lines = []
+    lines.append(f"# Security Test Report — Run {run_id}")
+    eng = data["engagement"]
+    lines.append(f"**Engagement:** {eng['name']}  \\n**Type:** {eng['type']}")
+    lines.append("")
+    lines.append("## Findings Summary")
+    if not data["findings"]:
+        lines.append("_No findings reported._")
+    for i, f in enumerate(data["findings"], start=1):
+        lines.append(f"### {i}. {f['title']}  \\n**Severity:** {f['severity']}  \\n**Category:** {f.get('category','-')}")
+        if f.get("cwe"):
+            lines.append(f"- CWE: {f['cwe']}")
+        if f.get("owasp"):
+            lines.append(f"- OWASP: {f['owasp']}")
+        if f.get("cvss") is not None:
+            lines.append(f"- CVSS: {f['cvss']}")
+        assets = f.get("affected_assets")
+        if assets:
+            lines.append(f"- Affected: `{json.dumps(assets)}`")
+        if f.get("description"):
+            lines.append(f"\\n**Description**\\n\\n{f['description']}")
+        if f.get("recommendation"):
+            lines.append(f"\\n**Recommendation**\\n\\n{f['recommendation']}")
+        lines.append("")
+    return "\\n".join(lines)

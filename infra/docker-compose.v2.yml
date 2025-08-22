@@ -34,7 +34,7 @@ services:
       - OPA_URL=http://opa:8181/v1/data/pentest/policy
       - SIMULATE_PROGRESS=true
       - SLACK_WEBHOOK=
-      - EVIDENCE_DIR=/data/evidence
+      - ARTIFACT_DIR=/app/data/artifacts
     depends_on:
       - db
       - opa
@@ -43,7 +43,7 @@ services:
       - ../schemas:/app/schemas
       - ../policies:/app/policies
       - ../orchestrator:/app/orchestrator
-      - evidence_data:/data/evidence
+      - artifacts_data:/app/data
 
   kali_agent:
     build:
@@ -57,4 +57,4 @@ services:
 
 volumes:
   db_data:
-  evidence_data:
+  artifacts_data:
