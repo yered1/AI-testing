@@ -1,0 +1,22 @@
+{
+  "id": "web_nuclei_default",
+  "title": "Web \u2014 Nuclei (default)",
+  "category": "web",
+  "description": "Run nuclei templates (severity: medium+).",
+  "tool_adapter": "nuclei_default",
+  "params_schema": {
+    "type": "object",
+    "properties": {
+      "targets": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "severity": {
+        "type": "string",
+        "default": "medium,high,critical"
+      }
+    }
+  }
+}

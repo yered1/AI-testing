@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+AGENT_TOKEN="${AGENT_TOKEN:-}"
+if [ -z "$AGENT_TOKEN" ]; then
+  echo "Set AGENT_TOKEN env (from POST /v2/agent_tokens)"; exit 1
+fi
+ALLOW_ACTIVE_SCAN="${ALLOW_ACTIVE_SCAN:-0}" AGENT_TOKEN="$AGENT_TOKEN" docker compose   -f infra/docker-compose.v2.yml -f infra/docker-compose.agents.zap.yml up --build -d agent_zap
