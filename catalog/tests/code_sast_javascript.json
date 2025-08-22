@@ -1,0 +1,32 @@
+{
+  "id": "code.sast.javascript",
+  "name": "SAST: JavaScript/TypeScript",
+  "category": "Code",
+  "risk_tier": "recon",
+  "description": "Static analysis for JS/TS; security smells and secrets.",
+  "prerequisites": [],
+  "exclusive_with": [],
+  "requires": {
+    "agents": [
+      "kali_gateway",
+      "cross_platform"
+    ],
+    "capabilities": [],
+    "inputs": [
+      "repo_url|zip"
+    ]
+  },
+  "optional_inputs": [],
+  "estimator": {
+    "time_per_host_sec": 45,
+    "cost_units": 3
+  },
+  "outputs": [
+    "sarif"
+  ],
+  "tool_adapter": "sast-js@0.3.0",
+  "evidence_retention": "standard",
+  "policy_tags": [
+    "code-only"
+  ]
+}

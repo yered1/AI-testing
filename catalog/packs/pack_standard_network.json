@@ -1,0 +1,10 @@
+{
+  "id": "pack.standard_network",
+  "name": "Standard Network (safe)",
+  "description": "Recommended safe network discovery & enumeration",
+  "tests": [
+    "network.discovery.ping_sweep",
+    "network.nmap.tcp_top_1000",
+    "network.enum.smb"
+  ]
+}

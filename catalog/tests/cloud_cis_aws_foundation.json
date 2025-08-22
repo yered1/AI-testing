@@ -1,0 +1,31 @@
+{
+  "id": "cloud.cis.aws_foundation",
+  "name": "Cloud: AWS CIS Foundations",
+  "category": "Cloud",
+  "risk_tier": "recon",
+  "description": "Checks AWS account against CIS Foundations baseline (read-only).",
+  "prerequisites": [],
+  "exclusive_with": [],
+  "requires": {
+    "agents": [
+      "cross_platform"
+    ],
+    "capabilities": [],
+    "inputs": [
+      "aws_role_arn|aws_access_key"
+    ]
+  },
+  "optional_inputs": [],
+  "estimator": {
+    "time_per_host_sec": 180,
+    "cost_units": 6
+  },
+  "outputs": [
+    "cloud_findings"
+  ],
+  "tool_adapter": "cloud-audit-aws@0.1.0",
+  "evidence_retention": "standard",
+  "policy_tags": [
+    "cloud-readonly"
+  ]
+}

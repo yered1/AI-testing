@@ -3,7 +3,7 @@
   "name": "Web: OWASP Top 10 Core",
   "category": "Web",
   "risk_tier": "safe_active",
-  "description": "Run core checks for OWASP Top 10. Login optional but recommended.",
+  "description": "Run core checks for OWASP Top 10.",
   "prerequisites": [],
   "exclusive_with": [],
   "requires": {

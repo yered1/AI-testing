@@ -1,6 +1,6 @@
-import hashlib, json, uuid, pathlib, glob
+import hashlib, json, uuid, pathlib, glob, ipaddress, urllib.parse, math
 from typing import List, Dict, Any
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -13,7 +13,7 @@ from .tenancy import set_tenant_guc, require_tenant, ensure_membership
 APP_ROOT = pathlib.Path(__file__).resolve().parent.parent
 CATALOG_DIR = APP_ROOT / "catalog" / "tests"
 
-app = FastAPI(title="AI Testing Orchestrator (v2)", version="0.2.0")
+app = FastAPI(title="AI Testing Orchestrator (v2)", version="0.3.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -70,7 +70,7 @@ def load_catalog() -> Dict[str, Any]:
     for path in glob.glob(str(CATALOG_DIR / "*.json")):
         with open(path, "r") as f:
             items.append(json.load(f))
-    return {"version": "0.1.0", "items": items}
+    return {"version": "0.2.0", "items": items}
 
 def catalog_index(catalog):
     return {i["id"]: i for i in catalog["items"]}
@@ -82,6 +82,15 @@ def health():
 @app.get("/v1/catalog")
 def get_catalog(_: Principal = Depends(require_tenant)):
     return load_catalog()
+
+@app.get("/v1/catalog/packs")
+def get_catalog_packs(_: Principal = Depends(require_tenant)):
+    packs_dir = APP_ROOT / "catalog" / "packs"
+    packs = []
+    for path in glob.glob(str(packs_dir / "*.json")):
+        with open(path, "r") as f:
+            packs.append(json.load(f))
+    return {"items": packs}
 
 @app.post("/v1/engagements", response_model=EngagementOut)
 def create_engagement(body: EngagementCreate, db: Session = Depends(get_db), principal: Principal = Depends(require_tenant)):
@@ -102,6 +111,8 @@ def create_plan(engagement_id: str, body: PlanRequest, db: Session = Depends(get
 
     catalog = load_catalog()
     idx = catalog_index(catalog)
+
+    # validate
     errors = []
     selected_ids = [t.id for t in body.selected_tests]
     for t in body.selected_tests:
@@ -161,3 +172,169 @@ def get_run(run_id: str, db: Session = Depends(get_db), principal: Principal = D
         raise HTTPException(status_code=404, detail="run not found")
     set_tenant_guc(db, r.tenant_id)
     return RunOut(id=r.id, engagement_id=r.engagement_id, plan_id=r.plan_id, status=r.status)
+
+# ---------------- Batch 2 logic ----------------
+
+def _count_hosts(scope: dict) -> int:
+    total = 0
+    for cidr in scope.get("in_scope_cidrs", []):
+        try:
+            net = ipaddress.ip_network(cidr, strict=False)
+            total += max(0, net.num_addresses - (2 if isinstance(net, ipaddress.IPv4Network) and net.prefixlen < 31 else 0))
+        except Exception:
+            continue
+    return min(total, 4096) if total else 1
+
+def _count_web_targets(scope: dict, selected_tests: list) -> int:
+    urls = set()
+    for t in selected_tests:
+        params = t.get("params", {})
+        for key in ("url","base_url","target_url"):
+            if key in params:
+                try:
+                    urls.add(urllib.parse.urlparse(params[key]).netloc)
+                except Exception:
+                    pass
+    if not urls:
+        for d in scope.get("in_scope_domains", []):
+            urls.add(d)
+    return min(len(urls), 64) or 1
+
+def _validate_required_inputs(test_item: dict, params: dict) -> list[str]:
+    errors = []
+    reqs = test_item.get("requires", {}).get("inputs", [])
+    for req in reqs:
+        alts = [k.strip() for k in req.split("|")]
+        if not any(k in params for k in alts):
+            errors.append(f"missing required input: {req}")
+    return errors
+
+def _estimate(catalog: dict, scope: dict, selected: list[dict]) -> dict:
+    idx = {i["id"]: i for i in catalog["items"]}
+    host_count = _count_hosts(scope)
+    web_count = _count_web_targets(scope, selected)
+
+    total_sec = 0.0
+    total_cost = 0.0
+    per_test = []
+
+    for t in selected:
+        item = idx.get(t["id"])
+        if not item: 
+            continue
+        est = item.get("estimator", {})
+        tph = float(est.get("time_per_host_sec", 0))
+        cu = float(est.get("cost_units", 0))
+
+        cat = item.get("category")
+        if cat == "Network":
+            mult = host_count
+        elif cat in ("Web","API"):
+            mult = web_count
+        else:
+            mult = 1
+
+        sec = tph * mult
+        cost = cu * mult
+        total_sec += sec
+        total_cost += cost
+        per_test.append({"id": t["id"], "assets": int(mult), "seconds": int(sec), "cost_units": int(cost)})
+
+    return {
+        "assets": {"network_hosts": host_count, "web_targets": web_count},
+        "per_test": per_test,
+        "duration_min": int(math.ceil(total_sec / 60.0)),
+        "cost_units": int(math.ceil(total_cost))
+    }
+
+@app.post("/v2/engagements/{engagement_id}/plan/validate")
+def validate_plan(engagement_id: str, body: PlanRequest = Body(...), db: Session = Depends(get_db), principal: Principal = Depends(require_tenant)):
+    e = db.execute(select(Engagement).where(Engagement.id == engagement_id)).scalar_one_or_none()
+    if not e:
+        raise HTTPException(status_code=404, detail="engagement not found")
+    ensure_membership(db, principal, e.tenant_id)
+    set_tenant_guc(db, e.tenant_id)
+
+    catalog = load_catalog()
+    idx = catalog_index(catalog)
+
+    selected_ids = [t.id for t in body.selected_tests]
+    errors = []
+    warnings = []
+    suggestions = []
+
+    for t in body.selected_tests:
+        if t.id not in idx:
+            errors.append({"test_id": t.id, "reason": "unknown test id"})
+    for t in body.selected_tests:
+        item = idx.get(t.id); 
+        if not item: 
+            continue
+        for pre in item.get("prerequisites", []):
+            if pre not in selected_ids:
+                errors.append({"test_id": t.id, "reason": f"missing prerequisite: {pre}"})
+        for c in item.get("exclusive_with", []):
+            if c in selected_ids:
+                errors.append({"test_id": t.id, "reason": f"conflicts with: {c}"})
+        req_input_errs = _validate_required_inputs(item, t.params)
+        for msg in req_input_errs:
+            errors.append({"test_id": t.id, "reason": msg})
+        url = t.params.get("url") or t.params.get("base_url")
+        if url and e.scope.get("in_scope_domains"):
+            try:
+                host = urllib.parse.urlparse(url).netloc
+                if not any(host.endswith(d) for d in e.scope["in_scope_domains"]):
+                    warnings.append({"test_id": t.id, "reason": "url host not matched to in_scope_domains"})
+            except Exception:
+                warnings.append({"test_id": t.id, "reason": "url not parseable"})
+
+    estimate = _estimate(catalog, e.scope, [t.model_dump() for t in body.selected_tests])
+
+    ok = len(errors) == 0
+    return {"ok": ok, "errors": errors, "warnings": warnings, "suggestions": suggestions, "estimate": estimate}
+
+@app.post("/v2/engagements/{engagement_id}/plan/preview", response_model=PlanOut)
+def preview_plan(engagement_id: str, body: PlanRequest = Body(...), db: Session = Depends(get_db), principal: Principal = Depends(require_tenant)):
+    e = db.execute(select(Engagement).where(Engagement.id == engagement_id)).scalar_one_or_none()
+    if not e:
+        raise HTTPException(status_code=404, detail="engagement not found")
+    ensure_membership(db, principal, e.tenant_id)
+    set_tenant_guc(db, e.tenant_id)
+
+    catalog = load_catalog()
+    idx = catalog_index(catalog)
+
+    errors = []
+    selected_ids = [t.id for t in body.selected_tests]
+    for t in body.selected_tests:
+        if t.id not in idx:
+            errors.append({"test_id": t.id, "reason": "unknown test id"})
+    for t in body.selected_tests:
+        item = idx.get(t.id); 
+        if not item: continue
+        for pre in item.get("prerequisites", []):
+            if pre not in selected_ids:
+                errors.append({"test_id": t.id, "reason": f"missing prerequisite: {pre}"})
+        for c in item.get("exclusive_with", []):
+            if c in selected_ids:
+                errors.append({"test_id": t.id, "reason": f"conflicts with: {c}"})
+    if errors:
+        raise HTTPException(status_code=422, detail={"validation": errors})
+
+    ordered = sorted(body.selected_tests, key=lambda t: (idx[t.id].get("category","zzz"), t.id))
+    steps = []
+    for t in ordered:
+        item = idx[t.id]
+        steps.append({
+            "id": f"step_{uuid.uuid4().hex[:8]}",
+            "test_id": t.id,
+            "tool_adapter": item.get("tool_adapter"),
+            "risk_tier": item.get("risk_tier"),
+            "params": t.params,
+            "agent_constraints": item.get("requires", {}).get("agents", []),
+            "outputs": item.get("outputs", []),
+        })
+    plan_raw = {"engagement_id": engagement_id, "steps": steps, "catalog_version": catalog["version"]}
+    plan_hash = hashlib.sha256(json.dumps(plan_raw, sort_keys=True).encode()).hexdigest()
+    pid = f"plan_{uuid.uuid4().hex[:12]}"
+    return PlanOut(id=pid, engagement_id=engagement_id, plan_hash=plan_hash, steps=steps, catalog_version=catalog["version"])
