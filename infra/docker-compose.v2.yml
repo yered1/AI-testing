@@ -1,0 +1,45 @@
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: ai_testing
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  orchestrator:
+    build:
+      context: ../
+      dockerfile: infra/orchestrator.Dockerfile.v2
+    ports:
+      - "8080:8080"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DATABASE_URL=postgresql+psycopg://app:app@db:5432/ai_testing
+      - DEV_BYPASS_AUTH=true
+      - REQUIRE_MFA=false
+      - OIDC_ISSUER=
+      - OIDC_AUDIENCE=
+    depends_on:
+      - db
+    volumes:
+      - ../catalog:/app/catalog
+      - ../schemas:/app/schemas
+      - ../policies:/app/policies
+      - ../orchestrator:/app/orchestrator
+
+  kali_agent:
+    build:
+      context: ../
+      dockerfile: infra/agent.Dockerfile
+    environment:
+      - ORCH_URL=http://orchestrator:8080
+      - TENANT_ID=t_demo
+    depends_on:
+      - orchestrator
+
+volumes:
+  db_data:
