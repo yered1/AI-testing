@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+if ! grep -q "Delta v0.8.4" README.md; then
+  echo -e "\n\n" >> README.md
+  cat README_DELTA_v084.md >> README.md
+  echo "README updated with v0.8.4 delta."
+else
+  echo "README already contains v0.8.4 delta."
+fi

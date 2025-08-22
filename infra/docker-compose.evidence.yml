@@ -1,0 +1,9 @@
+services:
+  orchestrator:
+    environment:
+      - EVIDENCE_DIR=/data/evidence
+    volumes:
+      - evidence_data:/data/evidence
+
+volumes:
+  evidence_data:

@@ -56,7 +56,6 @@ def plan_auto(engagement_id: str, body: Dict[str, Any] = None, db: Session = Dep
         sel += ["web_owasp_top10_core"]
     if t in ("mobile","android","ios"):
         sel += ["mobile_static_analysis_apk"]
-    # packs
     packs = (body or {}).get("preferences",{}).get("packs") if isinstance(body, dict) else []
     if packs:
         for path in glob.glob(str(PACKS_DIR / "*.json")):
@@ -67,7 +66,6 @@ def plan_auto(engagement_id: str, body: Dict[str, Any] = None, db: Session = Dep
                     sel += pj.get("tests",[])
             except Exception:
                 pass
-    # de-dup + validate
     dedup = []
     for s in sel:
         if s in ids and s not in dedup:

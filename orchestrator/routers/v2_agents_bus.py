@@ -100,8 +100,7 @@ def agent_lease(body: Dict[str, Any] = None, x_tenant_id: str = Header(alias="X-
 def job_events(job_id: str, body: Dict[str, Any], x_tenant_id: str = Header(alias="X-Tenant-Id"), x_agent_id: str = Header(alias="X-Agent-Id"), x_agent_key: str = Header(alias="X-Agent-Key"), db: Session = Depends(get_db)):
     require_agent(db, x_tenant_id, x_agent_id, x_agent_key)
     job = db.execute(text("SELECT id, run_id FROM jobs WHERE id=:id"), {"id": job_id}).mappings().first()
-    if not job:
-        raise HTTPException(status_code=404, detail="job not found")
+    if not job: raise HTTPException(status_code=404, detail="job not found")
     db.execute(text("INSERT INTO job_events (id, tenant_id, job_id, type, payload) VALUES (:id,:t,:j,:ty,:pl)"),
                {"id": f"je_{uuid.uuid4().hex[:10]}", "t": x_tenant_id, "j": job_id, "ty": body.get("type","job.event"), "pl": json.dumps(body.get("payload",{}))})
     insert_run_event(db, x_tenant_id, job["run_id"], body.get("type","job.event"), body.get("payload",{}))
@@ -111,12 +110,10 @@ def job_events(job_id: str, body: Dict[str, Any], x_tenant_id: str = Header(alia
 def job_complete(job_id: str, body: Dict[str, Any], x_tenant_id: str = Header(alias="X-Tenant-Id"), x_agent_id: str = Header(alias="X-Agent-Id"), x_agent_key: str = Header(alias="X-Agent-Key"), db: Session = Depends(get_db)):
     require_agent(db, x_tenant_id, x_agent_id, x_agent_key)
     job = db.execute(text("SELECT id, run_id FROM jobs WHERE id=:id"), {"id": job_id}).mappings().first()
-    if not job:
-        raise HTTPException(status_code=404, detail="job not found")
+    if not job: raise HTTPException(status_code=404, detail="job not found")
     status = body.get("status","succeeded")
     db.execute(text("UPDATE jobs SET status=:s WHERE id=:id"), {"s": status, "id": job_id})
     insert_run_event(db, x_tenant_id, job["run_id"], f"job.{status}", body.get("result",{}))
-    # finalize run if no active jobs
     cnt = db.execute(text("SELECT COUNT(*) FROM jobs WHERE run_id=:r AND status IN ('queued','leased','running')"), {"r": job["run_id"]}).scalar()
     if int(cnt or 0) == 0:
         db.execute(text("UPDATE runs SET status='completed' WHERE id=:r"), {"r": job["run_id"]})

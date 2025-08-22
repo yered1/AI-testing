@@ -1,0 +1,8 @@
+{
+  "id": "default_network_min",
+  "title": "Default \u2014 Network Minimum",
+  "tests": [
+    "network_discovery_ping_sweep",
+    "network_nmap_tcp_top_1000"
+  ]
+}

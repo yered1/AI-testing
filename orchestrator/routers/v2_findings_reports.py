@@ -22,7 +22,6 @@ def insert_run_event(db: Session, tenant_id: str, run_id: str, ev_type: str, pay
 
 
 router = APIRouter()
-
 EVIDENCE_DIR = os.environ.get("EVIDENCE_DIR","/data/evidence")
 
 @router.post("/v2/runs/{run_id}/findings")
@@ -62,14 +61,12 @@ async def artifacts_upload(run_id: str, file: UploadFile = File(...), label: str
     if not run:
         raise HTTPException(status_code=404, detail="run not found")
     set_tenant_guc(db, run["tenant_id"])
-
     os.makedirs(EVIDENCE_DIR, exist_ok=True)
     fname = f"{run_id}_{uuid.uuid4().hex[:8]}_{file.filename}"
     path = os.path.join(EVIDENCE_DIR, fname)
     content = await file.read()
     with open(path, "wb") as f:
         f.write(content)
-
     db.execute(text("""
         INSERT INTO artifacts (id, tenant_id, run_id, kind, label, path)
         VALUES (:id,:t,:r,:k,:l,:p)
@@ -79,8 +76,7 @@ async def artifacts_upload(run_id: str, file: UploadFile = File(...), label: str
 
 def _report_data(db: Session, run_id: str) -> Dict[str, Any]:
     r = db.execute(text("SELECT tenant_id, plan_id, engagement_id FROM runs WHERE id=:id"), {"id": run_id}).mappings().first()
-    if not r:
-        raise HTTPException(status_code=404, detail="run not found")
+    if not r: raise HTTPException(status_code=404, detail="run not found")
     set_tenant_guc(db, r["tenant_id"])
     eng = db.execute(text("SELECT name, type, scope FROM engagements WHERE id=:id"), {"id": r["engagement_id"]}).mappings().first()
     plan = db.execute(text("SELECT data FROM plans WHERE id=:id"), {"id": r["plan_id"]}).mappings().first()

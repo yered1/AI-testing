@@ -1,0 +1,18 @@
+{
+  "id": "web_owasp_top10_core",
+  "title": "Web \u2014 OWASP Top 10 Core",
+  "category": "web",
+  "description": "Core passive+safe-active checks mapped to OWASP Top 10 (non-destructive).",
+  "tool_adapter": "echo",
+  "params_schema": {
+    "type": "object",
+    "properties": {
+      "domains": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

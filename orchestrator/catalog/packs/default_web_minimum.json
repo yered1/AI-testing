@@ -1,0 +1,7 @@
+{
+  "id": "default_web_min",
+  "title": "Default \u2014 Web Minimum",
+  "tests": [
+    "web_owasp_top10_core"
+  ]
+}

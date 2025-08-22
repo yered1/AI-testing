@@ -1,4 +1,4 @@
-import os, time, json, uuid, requests, datetime
+import os, time, json, uuid, requests, datetime, sys
 
 ORCH = os.environ.get("ORCH_URL","http://localhost:8080")
 TENANT = os.environ.get("TENANT_ID","t_demo")
@@ -11,7 +11,7 @@ AGENT_KEY = None
 def register():
     global AGENT_ID, AGENT_KEY
     if not ENROLL_TOKEN:
-        raise SystemExit("AGENT_TOKEN is required")
+        print("[agent] Missing AGENT_TOKEN", file=sys.stderr); sys.exit(2)
     r = requests.post(f"{ORCH}/v2/agents/register", json={
         "enroll_token": ENROLL_TOKEN,
         "name": AGENT_NAME,
@@ -26,28 +26,41 @@ def register():
 def hdr():
     return {"X-Tenant-Id": TENANT, "X-Agent-Id": AGENT_ID, "X-Agent-Key": AGENT_KEY, "Content-Type":"application/json"}
 
-def lease_and_run():
+def run_job(job):
+    job_id = job["id"]
+    adapter = job.get("adapter")
+    params = job.get("params") or {}
+    if adapter == "echo":
+        result = {"echo": params, "ts": datetime.datetime.utcnow().isoformat()+"Z"}
+    elif adapter == "nmap_tcp_top_1000":
+        target = None
+        if isinstance(params, dict):
+            arr = params.get("targets") or []
+            if isinstance(arr, list) and arr:
+                target = arr[0]
+        cmd = ["nmap","-Pn","--top-ports","1000","-T3"]
+        if target: cmd += [target]
+        result = {"adapter":"nmap_tcp_top_1000","command":" ".join(cmd),"note":"dev agent demo; ensure authorization before scanning."}
+    else:
+        result = {"adapter": adapter or "unknown", "params": params, "note": "No-op demo"}
+    requests.post(f"{ORCH}/v2/jobs/{job_id}/events", headers=hdr(), json={"type":"job.started","payload":{"adapter":adapter}}, timeout=10)
+    time.sleep(0.5)
+    requests.post(f"{ORCH}/v2/jobs/{job_id}/complete", headers=hdr(), json={"status":"succeeded","result":result}, timeout=10)
+
+def main():
+    register()
     while True:
         try:
             requests.post(f"{ORCH}/v2/agents/heartbeat", headers=hdr(), timeout=10)
-            lr = requests.post(f"{ORCH}/v2/agents/lease", headers=hdr(), json={"kinds":["cross_platform"]}, timeout=20)
+            lr = requests.post(f"{ORCH}/v2/agents/lease", headers=hdr(), json={"kinds":["cross_platform","kali_gateway"]}, timeout=20)
             if lr.status_code == 204:
                 time.sleep(2); continue
             lr.raise_for_status()
             job = lr.json()
-            job_id = job["id"]
-            adapter = job["adapter"]
-            params = job.get("params", {})
-            requests.post(f"{ORCH}/v2/jobs/{job_id}/events", headers=hdr(), json={"type":"job.started","payload":{"adapter":adapter}}, timeout=10)
-            output = {"adapter": adapter, "params": params, "ts": datetime.datetime.utcnow().isoformat()+"Z"}
-            requests.post(f"{ORCH}/v2/jobs/{job_id}/complete", headers=hdr(), json={"status":"succeeded","result":output}, timeout=10)
+            run_job(job)
         except Exception as e:
             print("[agent] error:", e)
             time.sleep(2)
-
-def main():
-    register()
-    lease_and_run()
 
 if __name__ == "__main__":
     main()

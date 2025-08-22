@@ -1,13 +1,11 @@
-import uuid, json, datetime, hashlib
+import os, uuid, json, datetime, hashlib
 from typing import Optional, Dict, Any, List
-from fastapi import Depends, HTTPException, APIRouter, Query
+from fastapi import Depends, HTTPException, UploadFile, File, Form, Header, Response, Query, APIRouter
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from ..db import get_db
 from ..auth import Principal
 from ..tenancy import set_tenant_guc, require_tenant
-
-router = APIRouter()
 
 def month_key(dt=None):
     dt = dt or datetime.datetime.utcnow()
@@ -15,6 +13,15 @@ def month_key(dt=None):
 
 def sha256_hex(s: str) -> str:
     return hashlib.sha256(s.encode()).hexdigest()
+
+def insert_run_event(db: Session, tenant_id: str, run_id: str, ev_type: str, payload: Dict[str, Any]):
+    set_tenant_guc(db, tenant_id)
+    db.execute(text("INSERT INTO run_events (id, tenant_id, run_id, type, payload) VALUES (:id,:t,:r,:ty,:pl)"),
+               {"id": f"ev_{uuid.uuid4().hex[:12]}", "t": tenant_id, "r": run_id, "ty": ev_type, "pl": json.dumps(payload)})
+    db.commit()
+
+
+router = APIRouter()
 
 @router.post("/v2/quotas")
 def quotas_set(body: Dict[str, Any], db: Session = Depends(get_db), principal: Principal = Depends(require_tenant)):
