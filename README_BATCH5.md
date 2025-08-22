@@ -1,76 +1,49 @@
-# Batch 5 — Findings & Reporting v1 (v2 overlay)
+# Batch 5 — Findings & Reporting v1 (v2)
 
-Adds **findings ingestion**, **artifacts/evidence uploads**, and **report exports** (JSON/Markdown/HTML). Non‑destructive overlay to v2.
+Adds **tenant‑scoped findings storage**, evidence attachments (URL/text), and **report generation** (Markdown/JSON)
+for an engagement. The API remains additive and v1-safe.
 
 ## What’s included
-- **DB migration** `0004_findings_reporting.py`:
-  - `findings` (tenant‑scoped, RLS): title, severity, description, assets, CWE/OWASP tags, CVSS, recommendation, status.
-  - `artifacts` (tenant‑scoped, RLS): uploaded files linked to run and optionally a finding.
-  - `evidence` (tenant‑scoped, RLS): structured text notes/logs for a finding.
-- **Endpoints (app_v2.py)**:
-  - `POST /v2/runs/{run_id}/findings` — bulk upsert (id optional; generated if missing).
-  - `GET /v2/runs/{run_id}/findings` — list findings for the run.
-  - `POST /v2/runs/{run_id}/artifacts` — multipart file upload; fields: `file`, `finding_id` (optional).
-  - `GET /v2/reports/run/{run_id}.json|.md|.html` — exports based on current findings/artifacts.
-- **Evidence store**: local path configurable via `EVIDENCE_DIR` (default `/data/evidence`), persisted with a Docker volume.
-- **Templates**: `orchestrator/templates/report_run.md.j2` and `report_run.html.j2`
+- **DB migration**: `findings`, `finding_evidence`, and `reports` tables (RLS-enabled).
+- **Endpoints**:
+  - `POST /v2/findings` — ingest a finding (from agents or humans).
+  - `GET /v2/findings` — list/filter by engagement/run/severity/status.
+  - `GET /v2/findings/{id}` — retrieve one.
+  - `POST /v2/findings/{id}/status` — update status / resolution.
+  - `POST /v2/findings/{id}/evidence` — add evidence (URL or text snippet).
+  - `GET /v2/reports/engagement/{engagement_id}` — generate a Markdown or JSON report on the fly.
+- **Template**: `orchestrator/templates/report.md.j2` (Jinja2).
+- **Dependencies**: adds `Jinja2` to `requirements-extra.txt`.
 
-## Update / Run
+## Install / Update
 ```bash
 git checkout -b batch5-findings-reporting
 unzip -o ~/Downloads/ai-testing-batch5.zip
-
-# Bring up stack & run migrations
 docker compose -f infra/docker-compose.v2.yml up --build -d
 docker compose -f infra/docker-compose.v2.yml exec orchestrator alembic upgrade head
-
 open http://localhost:8080/docs
 ```
 
 ## Quick smoke
+
 ```bash
-# 0) Assume you have ENG, PLAN, RUN created as in earlier batches
+# 1) Create engagement (if not created)
+ENG=$(curl -s -X POST http://localhost:8080/v1/engagements   -H 'Content-Type: application/json'   -H 'X-Dev-User: yered' -H 'X-Dev-Email: yered@example.com' -H 'X-Tenant-Id: t_demo'   -d '{"name":"Web App","tenant_id":"t_demo","type":"web","scope":{"in_scope_domains":["app.example.com"],"in_scope_cidrs":[],"out_of_scope":[],"risk_tier":"safe_active","windows":[]}}' | jq -r .id)
 
-# 1) Ingest findings (bulk)
-cat > findings.json <<'JSON'
-[
-  {
-    "title": "Directory listing enabled",
-    "severity": "low",
-    "description": "The /static/ path exposes file listing.",
-    "assets": {"urls": ["https://app.example.com/static/"]},
-    "recommendation": "Disable autoindex and restrict directory browsing.",
-    "tags": {"owasp": ["A5-2021"], "cwe": [548]}
-  },
-  {
-    "title": "SSL certificate mismatch",
-    "severity": "medium",
-    "description": "CN does not match hostname on api endpoint.",
-    "assets": {"hosts": ["api.example.com"]},
-    "recommendation": "Regenerate certificate with proper SANs.",
-    "tags": {"cwe": [297]}
-  }
-]
+# 2) Create a simple plan & run (optional; findings can be linked to a run)
+cat > sel.json <<'JSON'
+{"selected_tests":[{"id":"web_owasp_top10_core"}],"agents":{},"risk_tier":"safe_active"}
 JSON
+PLAN=$(curl -s -X POST http://localhost:8080/v1/engagements/$ENG/plan   -H 'Content-Type: application/json'   -H 'X-Dev-User: yered' -H 'X-Dev-Email: yered@example.com' -H 'X-Tenant-Id: t_demo'   --data-binary @sel.json | jq -r .id)
+RUN=$(curl -s -X POST http://localhost:8080/v1/tests   -H 'Content-Type: application/json'   -H 'X-Dev-User: yered' -H 'X-Dev-Email: yered@example.com' -H 'X-Tenant-Id: t_demo'   -d "{"engagement_id":"$ENG","plan_id":"$PLAN"}" | jq -r .id)
 
-curl -s -X POST http://localhost:8080/v2/runs/$RUN/findings \
-  -H 'Content-Type: application/json' \
-  -H 'X-Dev-User: yered' -H 'X-Dev-Email: yered@example.com' -H 'X-Tenant-Id: t_demo' \
-  --data-binary @findings.json | jq .
+# 3) Ingest a finding (link to engagement + optional run)
+curl -s -X POST http://localhost:8080/v2/findings   -H 'Content-Type: application/json'   -H 'X-Dev-User: yered' -H 'X-Dev-Email: yered@example.com' -H 'X-Tenant-Id: t_demo'   -d "{"tenant_id":"t_demo","engagement_id":"$ENG","run_id":"$RUN","title":"Reflected XSS on /search","severity":"high","category":"web","owasp":"A03:2021","cwe":"CWE-79","cvss":"8.2","description":"User input reflected without encoding.","recommendation":"Encode output; adopt CSP.","affected_assets":[{"url":"https://app.example.com/search?q=<script>alert(1)</script>"}]}" | jq .
 
-# 2) Upload an artifact (attach to first finding id from response)
-FID="find_XXXXXXXX"  # replace
-curl -s -X POST http://localhost:8080/v2/runs/$RUN/artifacts \
-  -H 'X-Dev-User: yered' -H 'X-Dev-Email: yered@example.com' -H 'X-Tenant-Id: t_demo' \
-  -F finding_id=$FID -F file=@/path/to/screenshot.png | jq .
+# 4) Add evidence (URL or text)
+FID="<paste finding id>"
+curl -s -X POST http://localhost:8080/v2/findings/$FID/evidence   -H 'Content-Type: application/json'   -H 'X-Dev-User: yered' -H 'X-Dev-Email: yered@example.com' -H 'X-Tenant-Id: t_demo'   -d '{"type":"url","value":"https://s3.example.com/proof/xss.mp4"}' | jq .
 
-# 3) Export report (Markdown)
-curl -s http://localhost:8080/v2/reports/run/$RUN.md \
-  -H 'X-Dev-User: yered' -H 'X-Dev-Email: yered@example.com' -H 'X-Tenant-Id: t_demo' \
-  -o report.md && echo "report.md written"
-
-# 4) Export report (HTML)
-curl -s http://localhost:8080/v2/reports/run/$RUN.html \
-  -H 'X-Dev-User: yered' -H 'X-Dev-Email: yered@example.com' -H 'X-Tenant-Id: t_demo' \
-  -o report.html && echo "report.html written"
+# 5) Generate Markdown report
+curl -s "http://localhost:8080/v2/reports/engagement/$ENG?format=md"   -H 'X-Dev-User: yered' -H 'X-Dev-Email: yered@example.com' -H 'X-Tenant-Id: t_demo'   | sed -n '1,80p'
 ```
