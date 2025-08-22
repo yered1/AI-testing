@@ -1,0 +1,173 @@
+{
+  "info": {
+    "name": "AI-Testing v0.9.0",
+    "_postman_id": "e28688f8-3a90-4f79-ab6b-bd1ef0ee6f12",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "X-Dev-User",
+            "value": "yered"
+          },
+          {
+            "key": "X-Dev-Email",
+            "value": "yered@example.com"
+          },
+          {
+            "key": "X-Tenant-Id",
+            "value": "t_demo"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8080/health",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8080",
+          "path": [
+            "health"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Create Engagement",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Dev-User",
+            "value": "yered"
+          },
+          {
+            "key": "X-Dev-Email",
+            "value": "yered@example.com"
+          },
+          {
+            "key": "X-Tenant-Id",
+            "value": "t_demo"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"postman\",\n  \"tenant_id\": \"t_demo\",\n  \"type\": \"web\",\n  \"scope\": {\n    \"in_scope_domains\": [\n      \"example.com\"\n    ]\n  }\n}"
+        },
+        "url": {
+          "raw": "http://localhost:8080/v1/engagements",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8080",
+          "path": [
+            "v1",
+            "engagements"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Auto Plan",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Dev-User",
+            "value": "yered"
+          },
+          {
+            "key": "X-Dev-Email",
+            "value": "yered@example.com"
+          },
+          {
+            "key": "X-Tenant-Id",
+            "value": "t_demo"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
+        },
+        "url": {
+          "raw": "http://localhost:8080/v2/engagements/{{engagement_id}}/plan/auto",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8080",
+          "path": [
+            "v2",
+            "engagements",
+            "{{engagement_id}}",
+            "plan",
+            "auto"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Start Run",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "X-Dev-User",
+            "value": "yered"
+          },
+          {
+            "key": "X-Dev-Email",
+            "value": "yered@example.com"
+          },
+          {
+            "key": "X-Tenant-Id",
+            "value": "t_demo"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"engagement_id\": \"{{engagement_id}}\",\n  \"plan_id\": \"{{plan_id}}\"\n}"
+        },
+        "url": {
+          "raw": "http://localhost:8080/v1/tests",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8080",
+          "path": [
+            "v1",
+            "tests"
+          ]
+        }
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "engagement_id",
+      "value": "ENG_ID_HERE"
+    },
+    {
+      "key": "plan_id",
+      "value": "PLAN_ID_HERE"
+    }
+  ]
+}
