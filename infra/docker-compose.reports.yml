@@ -1,0 +1,7 @@
+services:
+  reporter:
+    build:
+      context: ../
+      dockerfile: infra/reporter.Dockerfile
+    ports:
+      - "9090:9090"
