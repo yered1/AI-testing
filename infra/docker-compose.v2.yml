@@ -32,9 +32,10 @@ services:
       - OIDC_ISSUER=
       - OIDC_AUDIENCE=
       - OPA_URL=http://opa:8181/v1/data/pentest/policy
-      - SIMULATE_PROGRESS=true
+      - SIMULATE_PROGRESS=false
       - SLACK_WEBHOOK=
-      - ARTIFACT_DIR=/app/data/artifacts
+      - EVIDENCE_DIR=/data/evidence
+      - AGENT_SIGNING_KEY=dev-signing-key
     depends_on:
       - db
       - opa
@@ -43,18 +44,24 @@ services:
       - ../schemas:/app/schemas
       - ../policies:/app/policies
       - ../orchestrator:/app/orchestrator
-      - artifacts_data:/app/data
+      - evidence_data:/data/evidence
 
-  kali_agent:
+  agent_dev1:
     build:
       context: ../
       dockerfile: infra/agent.Dockerfile
     environment:
       - ORCH_URL=http://orchestrator:8080
       - TENANT_ID=t_demo
+      - AGENT_TOKEN=devtoken-placeholder
+      - AGENT_NAME=agent-dev1
+      - AGENT_CAPS=echo,http
     depends_on:
       - orchestrator
+    volumes:
+      - agent_state:/data
 
 volumes:
   db_data:
-  artifacts_data:
+  evidence_data:
+  agent_state:
