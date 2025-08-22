@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Start stack (API + DB + OPA) with CI overrides
+        run: |
+          docker compose -f infra/docker-compose.v2.yml -f infra/docker-compose.evidence.yml -f infra/docker-compose.ci.yml up -d --build
+          echo "Waiting for API to be ready..."
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8080/health >/dev/null; then echo "API is up"; break; fi
+            sleep 2
+          done
+
+      - name: Migrate DB
+        run: |
+          docker compose -f infra/docker-compose.v2.yml exec -T orchestrator alembic upgrade head
+
+      - name: Install test deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install requests
+
+      - name: Smoke test (Python)
+        env:
+          API: http://localhost:8080
+          TENANT: t_demo
+        run: |
+          python scripts/ci_smoke.py
+
+      - name: Show logs on failure
+        if: failure()
+        run: |
+          docker compose -f infra/docker-compose.v2.yml logs orchestrator || true
+          docker compose -f infra/docker-compose.v2.yml logs db || true
+          docker compose -f infra/docker-compose.v2.yml logs opa || true

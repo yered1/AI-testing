@@ -100,3 +100,23 @@ AGENT_TOKEN="$TOKEN" bash scripts/agent_devext_up.sh
 4) Postman: import `docs/postman/AI-testing.postman_collection.json`.
 
 > **Safety**: By default the agent is **dry‑run** for active scans. Enable only when you have written permission for the target.
+
+
+
+# Delta v0.9.1 — CI + Makefile + CI-friendly smoke (additive)
+
+Adds:
+- **GitHub Actions CI** workflow `.github/workflows/ci.yml` (docker-compose up, migrate, Python smoke against API).
+- **Compose CI override** `infra/docker-compose.ci.yml` enabling `SIMULATE_PROGRESS=true` for predictable runs.
+- **Makefile** with `up`, `down`, `migrate`, `logs`, `ui-up`, `smoke`, `agent-devext`, `clean`.
+- **Python smoke** `scripts/ci_smoke.py` (no jq dependency).
+
+## Local quickstart
+```bash
+make up
+make migrate
+python scripts/ci_smoke.py
+```
+
+## CI on GitHub
+Push any branch and the workflow runs automatically. On failures, logs from `orchestrator`, `db`, and `opa` are printed.
