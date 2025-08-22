@@ -1,22 +1,24 @@
-## Agents & Jobs (new in 0.6.0)
+# Agents (Batch 8)
 
-### 1) Create an agent token (admin)
+This adds a secure **Agent Execution Bus**:
+
+- Create one-time **enrollment tokens**: `POST /v2/agent_tokens`
+- Agents **register**: `POST /v2/agents/register` using the token → receive `agent_id` + `agent_key`
+- Agents **heartbeat**: `POST /v2/agents/heartbeat`
+- Agents **lease** next job: `POST /v2/agents/lease`
+- Agents **emit progress**: `POST /v2/jobs/{id}/events`
+- Agents **complete** a job: `POST /v2/jobs/{id}/complete`
+
+### Run a dev agent
+
 ```bash
-curl -s -X POST http://localhost:8080/v2/agent_tokens \
+# 1) Create an agent token
+TOKEN=$(curl -s -X POST http://localhost:8080/v2/agent_tokens \
   -H 'Content-Type: application/json' \
   -H 'X-Dev-User: yered' -H 'X-Dev-Email: yered@example.com' -H 'X-Tenant-Id: t_demo' \
-  -d '{"tenant_id":"t_demo","name":"dev1","expires_in_days":30}' | jq .
-# => copy .token
+  -d '{"tenant_id":"t_demo","name":"dev1"}' | jq -r .token)
+
+# 2) Start dev agent
+AGENT_TOKEN=$TOKEN docker compose -f infra/docker-compose.v2.yml -f infra/docker-compose.agents.yml up --build -d agent_dev1
+docker compose -f infra/docker-compose.v2.yml -f infra/docker-compose.agents.yml logs -f agent_dev1
 ```
-
-### 2) Start a dev agent (Docker)
-Edit `infra/docker-compose.v2.yml` `agent_dev1` env `AGENT_TOKEN=<paste token>` then:
-```bash
-docker compose -f infra/docker-compose.v2.yml up --build -d agent_dev1
-docker compose -f infra/docker-compose.v2.yml logs -f agent_dev1
-```
-
-### 3) Create a plan & start a run
-Jobs are created for each plan step. The agent leases a job, runs the mapped adapter (echo/http), posts events and completion.
-
-> In production, catalog adapters map to real tools (nmap, nuclei, zap, etc.) and agents run with hardened profiles.

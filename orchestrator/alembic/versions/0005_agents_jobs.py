@@ -11,40 +11,46 @@ def upgrade():
         "agent_tokens",
         sa.Column("id", sa.String(), primary_key=True),
         sa.Column("tenant_id", sa.String(), sa.ForeignKey("tenants.id", ondelete="CASCADE"), index=True),
-        sa.Column("name", sa.String(), nullable=True),
+        sa.Column("name", sa.String(), nullable=False),
         sa.Column("token_hash", sa.String(), nullable=False),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("used_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("status", sa.String(), nullable=False, server_default="active"),
         sa.Column("created_by", sa.String(), sa.ForeignKey("users.id", ondelete="SET NULL"), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"))
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()")),
+        sa.Column("used_at", sa.DateTime(timezone=True), nullable=True)
     )
+    op.create_index("ix_agent_tokens_tenant", "agent_tokens", ["tenant_id"])
 
     op.create_table(
         "agents",
         sa.Column("id", sa.String(), primary_key=True),
         sa.Column("tenant_id", sa.String(), sa.ForeignKey("tenants.id", ondelete="CASCADE"), index=True),
-        sa.Column("name", sa.String(), nullable=True),
-        sa.Column("status", sa.String(), nullable=False, server_default="idle"),  # idle|busy|offline
-        sa.Column("capabilities", sa.JSON(), nullable=True),
-        sa.Column("last_seen", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("name", sa.String(), nullable=False),
+        sa.Column("kind", sa.String(), nullable=False, server_default="cross_platform"),
+        sa.Column("status", sa.String(), nullable=False, server_default="online"),
+        sa.Column("agent_key_hash", sa.String(), nullable=False),
+        sa.Column("last_seen", sa.DateTime(timezone=True), server_default=sa.text("now()")),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"))
     )
+    op.create_index("ix_agents_tenant", "agents", ["tenant_id"])
 
     op.create_table(
         "jobs",
         sa.Column("id", sa.String(), primary_key=True),
         sa.Column("tenant_id", sa.String(), sa.ForeignKey("tenants.id", ondelete="CASCADE"), index=True),
         sa.Column("run_id", sa.String(), sa.ForeignKey("runs.id", ondelete="CASCADE"), index=True),
-        sa.Column("plan_step_id", sa.String(), nullable=False),
-        sa.Column("test_id", sa.String(), nullable=False),
-        sa.Column("status", sa.String(), nullable=False, server_default="queued"),  # queued|leasing|running|succeeded|failed|aborted
-        sa.Column("agent_id", sa.String(), sa.ForeignKey("agents.id", ondelete="SET NULL"), nullable=True),
-        sa.Column("payload", sa.JSON(), nullable=False),   # adapter + params
-        sa.Column("result", sa.JSON(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"))
+        sa.Column("plan_id", sa.String(), sa.ForeignKey("plans.id", ondelete="CASCADE"), index=True),
+        sa.Column("engagement_id", sa.String(), sa.ForeignKey("engagements.id", ondelete="CASCADE"), index=True),
+        sa.Column("step_id", sa.String(), nullable=False),
+        sa.Column("order_index", sa.Integer(), nullable=False),
+        sa.Column("adapter", sa.String(), nullable=False),
+        sa.Column("params", sa.JSON(), nullable=True),
+        sa.Column("status", sa.String(), nullable=False, server_default="queued"),
+        sa.Column("leased_by", sa.String(), sa.ForeignKey("agents.id", ondelete="SET NULL"), nullable=True),
+        sa.Column("lease_expires_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"))
     )
-    op.create_index("ix_jobs_run_status", "jobs", ["run_id","status"])
+    op.create_index("ix_jobs_run_order", "jobs", ["run_id","order_index"])
 
     op.create_table(
         "job_events",
@@ -55,8 +61,9 @@ def upgrade():
         sa.Column("payload", sa.JSON(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"))
     )
+    op.create_index("ix_job_events_job_time", "job_events", ["job_id","created_at"])
 
-    # RLS policies
+    # RLS
     for tbl in ["agent_tokens","agents","jobs","job_events"]:
         op.execute(f'ALTER TABLE "{tbl}" ENABLE ROW LEVEL SECURITY;')
         op.execute(f'''
@@ -69,9 +76,13 @@ def downgrade():
     for tbl in ["job_events","jobs","agents","agent_tokens"]:
         try:
             op.execute(f'DROP POLICY IF EXISTS {tbl}_tenant_isolation ON "{tbl}";')
-        except Exception: pass
+        except Exception:
+            pass
+    op.drop_index("ix_job_events_job_time", table_name="job_events")
     op.drop_table("job_events")
-    op.drop_index("ix_jobs_run_status", table_name="jobs")
+    op.drop_index("ix_jobs_run_order", table_name="jobs")
     op.drop_table("jobs")
+    op.drop_index("ix_agents_tenant", table_name="agents")
     op.drop_table("agents")
+    op.drop_index("ix_agent_tokens_tenant", table_name="agent_tokens")
     op.drop_table("agent_tokens")
