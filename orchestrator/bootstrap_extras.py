@@ -6,3 +6,8 @@ app.include_router(v2_findings_reports.router, tags=["findings","artifacts","rep
 app.include_router(v2_agents_bus.router, tags=["agents"])
 app.include_router(v2_brain.router, tags=["brain"])
 app.include_router(v2_listings.router, tags=["listings"])
+
+# --- v0.9.5: extra routers (lease2 + agent artifacts) ---
+from .routers import v2_agents_bus_lease2, v2_agents_artifacts
+app.include_router(v2_agents_bus_lease2.router, tags=["agents"])
+app.include_router(v2_agents_artifacts.router, tags=["agents","artifacts"])
