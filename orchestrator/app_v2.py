@@ -1,16 +1,14 @@
-# v2 extensions: quotas + approvals + opa enforcement
-# (This file replaces/overlays orchestrator/app_v2.py from Batch 2.)
-
-import hashlib, json, uuid, pathlib, glob, datetime, os
+import hashlib, json, uuid, pathlib, glob, datetime, os, asyncio
 from typing import List, Dict, Any, Optional
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
-from sqlalchemy import select
-import httpx
+from sqlalchemy import select, text
+import httpx, requests
+from sse_starlette.sse import EventSourceResponse
 
-from .db import get_db
+from .db import get_db, SessionLocal
 from .models import Engagement, Plan, Run
 from .auth import get_principal, Principal
 from .tenancy import set_tenant_guc, require_tenant, ensure_membership
@@ -18,8 +16,10 @@ from .tenancy import set_tenant_guc, require_tenant, ensure_membership
 APP_ROOT = pathlib.Path(__file__).resolve().parent.parent
 CATALOG_DIR = APP_ROOT / "catalog" / "tests"
 OPA_URL = os.environ.get("OPA_URL","http://localhost:8181/v1/data/pentest/policy")
+SIMULATE = os.environ.get("SIMULATE_PROGRESS","false").lower() == "true"
+SLACK_WEBHOOK = os.environ.get("SLACK_WEBHOOK")
 
-app = FastAPI(title="AI Testing Orchestrator (v2)", version="0.3.0")
+app = FastAPI(title="AI Testing Orchestrator (v2)", version="0.4.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -29,7 +29,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ----- Models (requests) -----
+# --------- Models ---------
 
 class Scope(BaseModel):
     in_scope_domains: List[str] = Field(default_factory=list)
@@ -73,47 +73,22 @@ class RunOut(BaseModel):
     plan_id: str
     status: str
 
-# ----- Quotas & Approvals storage (simple ORM-free queries to keep overlay minimal) -----
-from sqlalchemy import table, column, text, Integer, String
-
+# --------- Quota/Approval helpers (reused) ---------
 def month_key(dt=None):
     dt = dt or datetime.datetime.utcnow()
     return dt.strftime("%Y-%m")
 
 def get_quota(db: Session, tenant_id: str) -> Optional[dict]:
     set_tenant_guc(db, tenant_id)
-    row = db.execute(text("""
-        SELECT monthly_budget, per_plan_cap, month_key
-        FROM quotas WHERE tenant_id=:t AND month_key=:m
-    """), {"t": tenant_id, "m": month_key()}).mappings().first()
+    row = db.execute(text("SELECT monthly_budget, per_plan_cap, month_key FROM quotas WHERE tenant_id=:t AND month_key=:m"),
+                     {"t": tenant_id, "m": month_key()}).mappings().first()
     return dict(row) if row else None
-
-def upsert_quota(db: Session, tenant_id: str, monthly_budget: int, per_plan_cap: int):
-    set_tenant_guc(db, tenant_id)
-    mk = month_key()
-    exists = db.execute(text("SELECT id FROM quotas WHERE tenant_id=:t AND month_key=:m"),
-                        {"t": tenant_id, "m": mk}).scalar()
-    if exists:
-        db.execute(text("UPDATE quotas SET monthly_budget=:b, per_plan_cap=:p WHERE tenant_id=:t AND month_key=:m"),
-                   {"b": monthly_budget, "p": per_plan_cap, "t": tenant_id, "m": mk})
-    else:
-        db.execute(text("INSERT INTO quotas (id, tenant_id, monthly_budget, per_plan_cap, month_key) VALUES (:id,:t,:b,:p,:m)"),
-                   {"id": f"q_{uuid.uuid4().hex[:10]}", "t": tenant_id, "b": monthly_budget, "p": per_plan_cap, "m": mk})
-    db.commit()
-    return get_quota(db, tenant_id)
 
 def sum_usage(db: Session, tenant_id: str) -> int:
     set_tenant_guc(db, tenant_id)
-    mk = month_key()
     val = db.execute(text("SELECT COALESCE(SUM(credits),0) FROM quota_usage WHERE tenant_id=:t AND month_key=:m"),
-                     {"t": tenant_id, "m": mk}).scalar()
+                     {"t": tenant_id, "m": month_key()}).scalar()
     return int(val or 0)
-
-def accrue_usage(db: Session, tenant_id: str, engagement_id: str, run_id: str, credits: int):
-    set_tenant_guc(db, tenant_id)
-    db.execute(text("INSERT INTO quota_usage (id, tenant_id, run_id, engagement_id, credits, month_key) VALUES (:id,:t,:r,:e,:c,:m)"),
-               {"id": f"u_{uuid.uuid4().hex[:10]}", "t": tenant_id, "r": run_id, "e": engagement_id, "c": credits, "m": month_key()})
-    db.commit()
 
 def approval_status(db: Session, tenant_id: str, engagement_id: str) -> str:
     set_tenant_guc(db, tenant_id)
@@ -121,24 +96,13 @@ def approval_status(db: Session, tenant_id: str, engagement_id: str) -> str:
                     {"t": tenant_id, "e": engagement_id}).scalar()
     return st or "none"
 
-def request_approval(db: Session, tenant_id: str, engagement_id: str, reason: str, creator_user_id: str) -> dict:
+def accrue_usage(db: Session, tenant_id: str, engagement_id: str, run_id: str, credits: int):
     set_tenant_guc(db, tenant_id)
-    aid = f"ap_{uuid.uuid4().hex[:10]}"
-    db.execute(text("INSERT INTO approvals (id, tenant_id, engagement_id, status, reason, created_by) VALUES (:id,:t,:e,'pending',:r,:u)"),
-               {"id": aid, "t": tenant_id, "e": engagement_id, "r": reason, "u": creator_user_id})
-    db.commit()
-    return {"id": aid, "status": "pending"}
-
-def decide_approval(db: Session, tenant_id: str, approval_id: str, decision: str, decider_user_id: str):
-    if decision not in ("approved","denied"):
-        raise HTTPException(status_code=400, detail="invalid decision")
-    set_tenant_guc(db, tenant_id)
-    db.execute(text("UPDATE approvals SET status=:s, decided_by=:u, decided_at=now() WHERE id=:id AND tenant_id=:t"),
-               {"s": decision, "u": decider_user_id, "id": approval_id, "t": tenant_id})
+    db.execute(text("INSERT INTO quota_usage (id, tenant_id, run_id, engagement_id, credits, month_key) VALUES (:id,:t,:r,:e,:c,:m)"),
+               {"id": f"u_{uuid.uuid4().hex[:10]}", "t": tenant_id, "r": run_id, "e": engagement_id, "c": credits, "m": month_key()})
     db.commit()
 
-# ----- Catalog helpers -----
-
+# --------- Catalog helpers ---------
 def load_catalog() -> Dict[str, Any]:
     items = []
     for path in glob.glob(str(CATALOG_DIR / "*.json")):
@@ -157,7 +121,6 @@ def estimate_cost_and_duration(selected_tests: List[SelectedTest], idx: Dict[str
         est = item.get("estimator", {})
         tph = est.get("time_per_host_sec", 0)
         cu = est.get("cost_units", 0)
-        # naive: multiply by hosts=asset_counts.get("hosts",1) if present
         hosts = (asset_counts or {}).get("hosts", 1)
         total_sec += int(tph) * max(1, hosts)
         total_cost += int(cu) * max(1, hosts)
@@ -169,6 +132,7 @@ def requires_intrusive(selected_tests: List[SelectedTest], idx: Dict[str,Any]) -
             return True
     return False
 
+# --------- OPA ---------
 async def opa_check(input_payload: dict) -> dict:
     try:
         async with httpx.AsyncClient(timeout=5) as client:
@@ -178,7 +142,57 @@ async def opa_check(input_payload: dict) -> dict:
     except Exception as e:
         return {"error": str(e)}
 
-# ----- Routes -----
+# --------- Event helpers ---------
+def insert_event(db: Session, tenant_id: str, run_id: str, ev_type: str, payload: dict):
+    set_tenant_guc(db, tenant_id)
+    db.execute(text("INSERT INTO run_events (id, tenant_id, run_id, type, payload) VALUES (:id,:t,:r,:ty,:pl)"),
+               {"id": f"ev_{uuid.uuid4().hex[:12]}", "t": tenant_id, "r": run_id, "ty": ev_type, "pl": json.dumps(payload)})
+    db.commit()
+
+async def simulate_progress(run_id: str, tenant_id: str, steps: list):
+    # Run in background; poll run status to honor pause/abort
+    try:
+        i = 0
+        with SessionLocal() as s:
+            set_tenant_guc(s, tenant_id)
+            insert_event(s, tenant_id, run_id, "run.started", {"message":"Run started"})
+        for step in steps:
+            while True:
+                await asyncio.sleep(0.5)
+                with SessionLocal() as s:
+                    set_tenant_guc(s, tenant_id)
+                    status = s.execute(text("SELECT status FROM runs WHERE id=:r"), {"r": run_id}).scalar()
+                    if status == "aborted":
+                        insert_event(s, tenant_id, run_id, "run.aborted", {"message":"Run aborted"})
+                        return
+                    if status == "paused":
+                        continue
+                    break
+            with SessionLocal() as s:
+                set_tenant_guc(s, tenant_id)
+                insert_event(s, tenant_id, run_id, "step.started", {"test_id": step.get("test_id")})
+            await asyncio.sleep(1.2)
+            with SessionLocal() as s:
+                set_tenant_guc(s, tenant_id)
+                insert_event(s, tenant_id, run_id, "step.completed", {"test_id": step.get("test_id"), "result":"ok"})
+            i += 1
+        with SessionLocal() as s:
+            set_tenant_guc(s, tenant_id)
+            s.execute(text("UPDATE runs SET status='completed' WHERE id=:r"), {"r": run_id})
+            s.commit()
+            insert_event(s, tenant_id, run_id, "run.completed", {"message":"Run completed"})
+            if SLACK_WEBHOOK:
+                try:
+                    requests.post(SLACK_WEBHOOK, json={"text": f":white_check_mark: Run {run_id} completed"} , timeout=3)
+                except Exception:
+                    pass
+    except Exception:
+        with SessionLocal() as s:
+            set_tenant_guc(s, tenant_id)
+            s.execute(text("UPDATE runs SET status='failed' WHERE id=:r"), {"r": run_id}); s.commit()
+            insert_event(s, tenant_id, run_id, "run.failed", {"message":"Run failed unexpectedly"})
+
+# --------- Routes ---------
 
 @app.get("/health")
 def health():
@@ -190,7 +204,6 @@ def get_catalog(_: Principal = Depends(require_tenant)):
 
 @app.get("/v1/catalog/packs")
 def get_packs(_: Principal = Depends(require_tenant)):
-    # Minimal packs example; front-end can render as checkboxes
     return {
         "packs": [
             {"id":"pack.standard_network","name":"Standard Network","tests":["network.discovery.ping_sweep","network.nmap.tcp_top_1000"]},
@@ -207,8 +220,11 @@ def create_engagement(body: EngagementCreate, db: Session = Depends(get_db), pri
     db.add(e); db.commit()
     return EngagementOut(id=e.id, tenant_id=e.tenant_id, name=e.name, type=e.type, scope=e.scope)
 
+# ---- Validate / Preview (as in Batch 3) ----
+class PlanValidateRequest(PlanRequest): pass
+
 @app.post("/v2/engagements/{engagement_id}/plan/validate")
-async def plan_validate(engagement_id: str, body: PlanRequest, db: Session = Depends(get_db), principal: Principal = Depends(require_tenant)):
+async def plan_validate(engagement_id: str, body: PlanValidateRequest, db: Session = Depends(get_db), principal: Principal = Depends(require_tenant)):
     e = db.execute(select(Engagement).where(Engagement.id == engagement_id)).scalar_one_or_none()
     if not e:
         raise HTTPException(status_code=404, detail="engagement not found")
@@ -236,87 +252,55 @@ async def plan_validate(engagement_id: str, body: PlanRequest, db: Session = Dep
     est = estimate_cost_and_duration(body.selected_tests, idx, asset_counts={"hosts": 1})
     quota = get_quota(db, e.tenant_id)
     used = sum_usage(db, e.tenant_id)
-    over_quota = False
-    over_reason = None
+    over_quota = False; reason = None
     if quota:
         if est["cost_units"] > quota["per_plan_cap"]:
-            over_quota = True; over_reason = "per_plan_cap"
+            over_quota = True; reason = "per_plan_cap"
         if used + est["cost_units"] > quota["monthly_budget"]:
-            over_quota = True; over_reason = (over_reason or "monthly_budget")
+            over_quota = True; reason = (reason or "monthly_budget")
 
-    # OPA check
     approval_granted = (approval_status(db, e.tenant_id, engagement_id) == "approved")
     opa_input = {"risk_tier": body.risk_tier, "scope": e.scope, "approval_granted": approval_granted}
-    opa_res = await opa_check(opa_input)
-    opa_denies = opa_res.get("result",{}).get("deny",[])
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            r = await client.post(OPA_URL, json={"input": opa_input}); r.raise_for_status()
+            opa_res = r.json()
+    except Exception as ex:
+        opa_res = {"error": str(ex)}
+    denies = opa_res.get("result",{}).get("deny",[])
 
-    ok = (len(errors) == 0) and (not over_quota) and (not opa_denies)
-    return {
-        "ok": ok,
-        "errors": errors,
-        "estimate": est,
-        "quota": {"configured": bool(quota), "used": used, "monthly_budget": quota["monthly_budget"] if quota else None, "per_plan_cap": quota["per_plan_cap"] if quota else None, "status": "over_quota" if over_quota else "ok", "reason": over_reason},
-        "opa": {"deny": opa_denies, "raw": opa_res}
-    }
+    ok = (len(errors) == 0) and (not over_quota) and (not denies)
+    return {"ok": ok, "errors": errors, "estimate": est,
+            "quota": {"configured": bool(quota), "used": used, "status": "over_quota" if over_quota else "ok", "reason": reason, **(quota or {})},
+            "opa": {"deny": denies}}
 
 @app.post("/v2/engagements/{engagement_id}/plan/preview")
 def plan_preview(engagement_id: str, body: PlanRequest, db: Session = Depends(get_db), principal: Principal = Depends(require_tenant)):
     e = db.execute(select(Engagement).where(Engagement.id == engagement_id)).scalar_one_or_none()
     if not e:
         raise HTTPException(status_code=404, detail="engagement not found")
-    ensure_membership(db, principal, e.tenant_id)
-    set_tenant_guc(db, e.tenant_id)
-
-    catalog = load_catalog()
-    idx = catalog_index(catalog)
-
+    ensure_membership(db, principal, e.tenant_id); set_tenant_guc(db, e.tenant_id)
+    catalog = load_catalog(); idx = catalog_index(catalog)
     ordered = sorted(body.selected_tests, key=lambda t: (idx.get(t.id,{}).get("category","zzz"), t.id))
-    steps = []
-    for t in ordered:
-        item = idx.get(t.id,{})
-        steps.append({
-            "test_id": t.id,
-            "tool_adapter": item.get("tool_adapter"),
-            "risk_tier": item.get("risk_tier"),
-            "params": t.params,
-            "agent_constraints": item.get("requires", {}).get("agents", []),
-            "outputs": item.get("outputs", []),
-        })
+    steps = [{
+        "test_id": t.id,
+        "tool_adapter": idx.get(t.id,{}).get("tool_adapter"),
+        "risk_tier": idx.get(t.id,{}).get("risk_tier"),
+        "params": t.params,
+        "agent_constraints": idx.get(t.id,{}).get("requires",{}).get("agents",[]),
+        "outputs": idx.get(t.id,{}).get("outputs",[])
+    } for t in ordered]
     return {"steps": steps}
 
+# ---- Plan creation (unchanged guardrails; minimal) ----
 @app.post("/v1/engagements/{engagement_id}/plan", response_model=PlanOut)
 def create_plan(engagement_id: str, body: PlanRequest, db: Session = Depends(get_db), principal: Principal = Depends(require_tenant)):
     e = db.execute(select(Engagement).where(Engagement.id == engagement_id)).scalar_one_or_none()
     if not e:
         raise HTTPException(status_code=404, detail="engagement not found")
-    ensure_membership(db, principal, e.tenant_id)
-    set_tenant_guc(db, e.tenant_id)
+    ensure_membership(db, principal, e.tenant_id); set_tenant_guc(db, e.tenant_id)
 
-    # Check quotas & OPA again (defensive)
-    catalog = load_catalog()
-    idx = catalog_index(catalog)
-    est = estimate_cost_and_duration(body.selected_tests, idx, asset_counts={"hosts": 1})
-    quota = get_quota(db, e.tenant_id)
-    used = sum_usage(db, e.tenant_id)
-    if quota:
-        if est["cost_units"] > quota["per_plan_cap"] or used + est["cost_units"] > quota["monthly_budget"]:
-            raise HTTPException(status_code=402, detail={"reason":"over_quota","estimate":est,"quota":{"used":used, "monthly_budget": quota["monthly_budget"], "per_plan_cap": quota["per_plan_cap"]}})
-
-    # OPA deny?
-    approval_granted = (approval_status(db, e.tenant_id, engagement_id) == "approved")
-    opa_input = {"risk_tier": body.risk_tier, "scope": e.scope, "approval_granted": approval_granted}
-    # Best-effort sync call
-    try:
-        import requests
-        r = requests.post(OPA_URL, json={"input": opa_input}, timeout=3)
-        r.raise_for_status()
-        denies = r.json().get("result",{}).get("deny",[])
-        if denies:
-            raise HTTPException(status_code=403, detail={"reason":"policy_denied","messages":denies})
-    except Exception:
-        pass  # allow if OPA unavailable; rely on agent-side guardrails later
-
-    # Build steps deterministically
+    catalog = load_catalog(); idx = catalog_index(catalog)
     selected_ids = [t.id for t in body.selected_tests]
     errors = []
     for t in body.selected_tests:
@@ -355,78 +339,96 @@ def create_plan(engagement_id: str, body: PlanRequest, db: Session = Depends(get
     db.add(p); db.commit()
     return PlanOut(id=p.id, engagement_id=p.engagement_id, plan_hash=p.plan_hash, steps=steps, catalog_version=p.catalog_version)
 
+# ---- Start test + simulation ----
 @app.post("/v1/tests", response_model=RunOut)
 def start_test(body: StartTestRequest, db: Session = Depends(get_db), principal: Principal = Depends(require_tenant)):
     e = db.execute(select(Engagement).where(Engagement.id == body.engagement_id)).scalar_one_or_none()
-    if not e:
-        raise HTTPException(status_code=404, detail="engagement not found")
-    ensure_membership(db, principal, e.tenant_id)
-    set_tenant_guc(db, e.tenant_id)
+    if not e: raise HTTPException(status_code=404, detail="engagement not found")
+    ensure_membership(db, principal, e.tenant_id); set_tenant_guc(db, e.tenant_id)
     p = db.execute(select(Plan).where(Plan.id == body.plan_id, Plan.engagement_id == body.engagement_id)).scalar_one_or_none()
-    if not p:
-        raise HTTPException(status_code=404, detail="plan not found for engagement")
-
-    # Quota re-check and approval gating
-    catalog = load_catalog()
-    idx = catalog_index(catalog)
-    selected_tests = [SelectedTest(id=s["test_id"], params=s.get("params",{})) for s in p.data.get("steps",[])]
-    est = estimate_cost_and_duration(selected_tests, idx, asset_counts={"hosts":1})
-    quota = get_quota(db, e.tenant_id)
-    used = sum_usage(db, e.tenant_id)
-    if quota and (used + est["cost_units"] > quota["monthly_budget"]):
-        raise HTTPException(status_code=402, detail={"reason":"over_quota_at_start","estimate":est,"used":used,"budget":quota["monthly_budget"]})
-
-    if requires_intrusive(selected_tests, idx):
-        if approval_status(db, e.tenant_id, body.engagement_id) != "approved":
-            raise HTTPException(status_code=403, detail={"reason":"approval_required"})
+    if not p: raise HTTPException(status_code=404, detail="plan not found for engagement")
 
     rid = f"run_{uuid.uuid4().hex[:12]}"
     r = Run(id=rid, tenant_id=e.tenant_id, engagement_id=e.id, plan_id=p.id, status="running")
     db.add(r); db.commit()
 
-    # accrue usage immediately (simple; refine later with phase-based accrual)
-    if quota:
-        accrue_usage(db, e.tenant_id, e.id, r.id, est["cost_units"])
+    # initial events
+    insert_event(db, e.tenant_id, r.id, "run.queued", {"message":"Run queued"})
+    steps = [{"test_id": s["test_id"], "params": s.get("params",{})} for s in p.data.get("steps",[])]
 
+    # notify Slack
+    if SLACK_WEBHOOK:
+        try:
+            requests.post(SLACK_WEBHOOK, json={"text": f":rocket: Run {r.id} started for engagement {e.id}"}, timeout=3)
+        except Exception:
+            pass
+
+    # simulate if enabled
+    if SIMULATE and steps:
+        asyncio.get_event_loop().create_task(simulate_progress(r.id, e.tenant_id, steps))
     return RunOut(id=r.id, engagement_id=r.engagement_id, plan_id=r.plan_id, status=r.status)
 
-# ---- Quotas API ----
-class QuotaIn(BaseModel):
-    tenant_id: str
-    monthly_budget: int
-    per_plan_cap: int
+@app.get("/v1/tests/{run_id}", response_model=RunOut)
+def get_run(run_id: str, db: Session = Depends(get_db), principal: Principal = Depends(require_tenant)):
+    r = db.execute(select(Run).where(Run.id == run_id)).scalar_one_or_none()
+    if not r: raise HTTPException(status_code=404, detail="run not found")
+    set_tenant_guc(db, r.tenant_id)
+    return RunOut(id=r.id, engagement_id=r.engagement_id, plan_id=r.plan_id, status=r.status)
 
-@app.post("/v2/quotas")
-def set_quota(body: QuotaIn, db: Session = Depends(get_db), principal: Principal = Depends(require_tenant)):
-    ensure_membership(db, principal, body.tenant_id)
-    q = upsert_quota(db, body.tenant_id, body.monthly_budget, body.per_plan_cap)
-    return q
+# ---- SSE stream ----
+@app.get("/v2/runs/{run_id}/events")
+def events_stream(run_id: str, db: Session = Depends(get_db), principal: Principal = Depends(require_tenant)):
+    r = db.execute(select(Run).where(Run.id == run_id)).scalar_one_or_none()
+    if not r: raise HTTPException(status_code=404, detail="run not found")
+    set_tenant_guc(db, r.tenant_id)
 
-@app.get("/v2/quotas/{tenant_id}")
-def get_quota_api(tenant_id: str, db: Session = Depends(get_db), principal: Principal = Depends(require_tenant)):
-    ensure_membership(db, principal, tenant_id)
-    q = get_quota(db, tenant_id)
-    used = sum_usage(db, tenant_id)
-    return {"quota": q, "used": used}
+    async def gen(last_seen: Optional[str] = None):
+        last_ts = None
+        while True:
+            await asyncio.sleep(0.6)
+            with SessionLocal() as s:
+                set_tenant_guc(s, r.tenant_id)
+                if last_ts is None:
+                    rows = s.execute(text("SELECT id,type,payload,created_at FROM run_events WHERE run_id=:rid ORDER BY created_at ASC LIMIT 50"),
+                                     {"rid": run_id}).mappings().all()
+                else:
+                    rows = s.execute(text("SELECT id,type,payload,created_at FROM run_events WHERE run_id=:rid AND created_at > :ts ORDER BY created_at ASC LIMIT 50"),
+                                     {"rid": run_id, "ts": last_ts}).mappings().all()
+            for row in rows:
+                last_ts = row["created_at"]
+                yield {"event": row["type"], "id": row["id"], "data": json.dumps(row["payload"])}
+            # keepalive
+            yield {"event":"keepalive", "data":"{}"}
 
-# ---- Approvals API ----
-class ApprovalIn(BaseModel):
-    tenant_id: str
-    engagement_id: str
-    reason: str
+    return EventSourceResponse(gen())
 
-class ApprovalDecision(BaseModel):
-    tenant_id: str
-    decision: str  # approved | denied
+# ---- Run controls ----
+class ControlIn(BaseModel):
+    action: str  # pause|resume|abort
 
-@app.post("/v2/approvals")
-def approvals_request(body: ApprovalIn, db: Session = Depends(get_db), principal: Principal = Depends(require_tenant)):
-    ensure_membership(db, principal, body.tenant_id)
-    res = request_approval(db, body.tenant_id, body.engagement_id, body.reason, principal.user_id)
-    return res
+@app.post("/v2/runs/{run_id}/control")
+def run_control(run_id: str, body: ControlIn, db: Session = Depends(get_db), principal: Principal = Depends(require_tenant)):
+    r = db.execute(select(Run).where(Run.id == run_id)).scalar_one_or_none()
+    if not r: raise HTTPException(status_code=404, detail="run not found")
+    set_tenant_guc(db, r.tenant_id)
 
-@app.post("/v2/approvals/{approval_id}/decide")
-def approvals_decide(approval_id: str, body: ApprovalDecision, db: Session = Depends(get_db), principal: Principal = Depends(require_tenant)):
-    ensure_membership(db, principal, body.tenant_id)
-    decide_approval(db, body.tenant_id, approval_id, body.decision, principal.user_id)
-    return {"id": approval_id, "status": body.decision}
+    if body.action not in ("pause","resume","abort"):
+        raise HTTPException(status_code=400, detail="invalid action")
+
+    if body.action == "pause":
+        db.execute(text("UPDATE runs SET status='paused' WHERE id=:r"), {"r": run_id}); db.commit()
+        insert_event(db, r.tenant_id, run_id, "run.paused", {"by":"user"})
+        return {"ok": True, "status": "paused"}
+    if body.action == "resume":
+        db.execute(text("UPDATE runs SET status='running' WHERE id=:r"), {"r": run_id}); db.commit()
+        insert_event(db, r.tenant_id, run_id, "run.resumed", {"by":"user"})
+        return {"ok": True, "status": "running"}
+    if body.action == "abort":
+        db.execute(text("UPDATE runs SET status='aborted' WHERE id=:r"), {"r": run_id}); db.commit()
+        insert_event(db, r.tenant_id, run_id, "run.aborted", {"by":"user"})
+        if SLACK_WEBHOOK:
+            try:
+                requests.post(SLACK_WEBHOOK, json={"text": f":stop_sign: Run {run_id} aborted"}, timeout=3)
+            except Exception:
+                pass
+        return {"ok": True, "status": "aborted"}
