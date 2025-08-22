@@ -1,38 +1,41 @@
-# AI Pentest Platform (Starter Skeleton)
+# AI Testing Platform — Batch 1 (Auth + DB + RLS-ready)
 
-> **Status**: walking-skeleton scaffold — FastAPI orchestrator, JSON Schemas, sample Test Catalog, basic OPA policy stub, and agent stubs.  
-> This is meant to get you running quickly; replace in-memory stores with Postgres and wire real agents as you iterate.
+This batch upgrades the walking skeleton to a **database-backed**, **OIDC-ready**, **tenant-isolated** API.
 
-## What’s here
+## What’s new
+- **FastAPI orchestrator** now uses **Postgres** via SQLAlchemy.
+- **Alembic** migrations create core tables and **RLS policies** (scaffold).
+- **OIDC-ready** auth dependency with **MFA claim check**; **DEV bypass** supported.
+- **Tenant membership** and **per-request GUC** (`app.current_tenant`) to support RLS.
+- OpenAPI security scheme and auth docs. 
 
-- **orchestrator/**: FastAPI app exposing minimal endpoints
-  - `/health`, `/v1/catalog`, `/v1/engagements`, `/v1/engagements/{id}/plan`, `/v1/tests`, `/v1/tests/{id}`
-- **schemas/**: JSON Schemas (Plan DSL, Test Catalog item, Event, Finding)
-- **catalog/**: sample test definitions (checkbox-ready)
-- **policies/**: OPA/Rego policy stub for scope & risk
-- **agents/**: Python stubs for Kali gateway and cross-platform agent
-- **infra/**: docker-compose to run orchestrator quickly
+> NOTE: RLS is enabled in migrations, but requires each request to set the tenant GUC. This build expects an `X-Tenant-Id` header (DEV) or derives tenant from membership (PROD).
 
-## Quick start
-
+## Quick start (Docker)
 ```bash
-# 1) Using Docker (recommended for a quick spin)
+# env file (dev)
+cp orchestrator/.env.example orchestrator/.env
+
+# start services
 docker compose -f infra/docker-compose.yml up --build
 
-# 2) Or run locally (Python 3.10+)
+# open docs
+open http://localhost:8080/docs
+```
+
+## Local dev (without Docker)
+```bash
+# Postgres running locally and DATABASE_URL set
 cd orchestrator
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+alembic upgrade head
 uvicorn app:app --reload --host 0.0.0.0 --port 8080
-
-# Open docs: http://localhost:8080/docs
 ```
 
-## Next steps (suggested)
-- Replace in-memory stores with Postgres + SQLAlchemy/RLS.
-- Hook OPA decision checks before plan/run creation.
-- Implement WebSocket/SSE event streams for live progress.
-- Add authentication/authorization (OIDC + MFA) — this skeleton is unauthenticated by design for local testing.
-- Expand Test Catalog and map to real tool adapters in agents.
+## Auth modes
+- **DEV_BYPASS_AUTH=true** (default): use `X-Dev-User`, `X-Dev-Email`, and `X-Tenant-Id` headers to simulate auth.
+- **OIDC**: set `OIDC_ISSUER`, `OIDC_AUDIENCE`. Token must include `amr` with `mfa` (if `REQUIRE_MFA=true`).
 
-**Legal note:** Use only with explicit written authorization (ROE/LoA). You are responsible for lawful use.
+## Next batches
+- Catalog Checkbox UI endpoints (dry-run/estimate), Quotas & Approvals, OPA enforcement, Live progress, Findings.

@@ -2,7 +2,6 @@ package pentest.policy
 
 default allow = false
 
-# Example: Only allow safe_active or recon by default
 allow {
   input.risk_tier == "recon"
 }
@@ -21,5 +20,5 @@ deny[msg] {
 }
 
 scope_valid {
-  count(input.scope.in_scope_domains) > 0  # stub rule
+  count(input.scope.in_scope_domains) > 0  # stub example
 }

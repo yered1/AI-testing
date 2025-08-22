@@ -1,34 +1,47 @@
-import os, glob, json, hashlib, time, uuid, pathlib
-from typing import List, Optional, Dict, Any
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
-from fastapi.responses import StreamingResponse, JSONResponse
+import hashlib, json, uuid
+from typing import List, Dict, Any
+from fastapi import FastAPI, Depends, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
+from sqlalchemy import select
+from .settings import settings
+from .db import get_db, engine
+from .models import Tenant, Engagement, Plan, Run
+from .auth import get_principal, Principal
+from .tenancy import set_tenant_guc, require_tenant, ensure_membership
+import pathlib, glob
 
 APP_ROOT = pathlib.Path(__file__).resolve().parent.parent
 CATALOG_DIR = APP_ROOT / "catalog" / "tests"
 
-app = FastAPI(title="AI Pentest Orchestrator (Starter)", version="0.1.0")
+app = FastAPI(title="AI Testing Orchestrator", version="0.2.0")
 
-# --- In-memory stores (replace with DB) ---
-ENGAGEMENTS: Dict[str, Dict[str, Any]] = {}
-PLANS: Dict[str, Dict[str, Any]] = {}
-RUNS: Dict[str, Dict[str, Any]] = {}
+# CORS (dev-friendly)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-# --- Models ---
+# ---------------- Pydantic inputs ----------------
 class Scope(BaseModel):
     in_scope_domains: List[str] = Field(default_factory=list)
     in_scope_cidrs: List[str] = Field(default_factory=list)
     out_of_scope: List[str] = Field(default_factory=list)
     risk_tier: str = Field(default="safe_active")
-    windows: List[Dict[str, str]] = Field(default_factory=list)  # [{"start":"...Z","end":"...Z"}]
+    windows: List[Dict[str, str]] = Field(default_factory=list)
 
 class EngagementCreate(BaseModel):
     name: str
     tenant_id: str
-    type: str  # "network"|"webapp"|"api"|"mobile"|"code"|"cloud"
+    type: str
     scope: Scope
 
-class Engagement(EngagementCreate):
+class EngagementOut(EngagementCreate):
     id: str
 
 class SelectedTest(BaseModel):
@@ -40,91 +53,88 @@ class PlanRequest(BaseModel):
     agents: Dict[str, Any] = Field(default_factory=dict)
     risk_tier: str = "safe_active"
 
-class Plan(BaseModel):
+class PlanOut(BaseModel):
     id: str
     engagement_id: str
     plan_hash: str
     steps: List[Dict[str, Any]]
-    catalog_version: str = "0.1.0"
+    catalog_version: str
 
 class StartTestRequest(BaseModel):
     engagement_id: str
     plan_id: str
 
-class Run(BaseModel):
+class RunOut(BaseModel):
     id: str
     engagement_id: str
     plan_id: str
-    status: str = "queued"  # queued | running | completed | failed
-    created_at: float = time.time()
+    status: str
 
-# --- Utils ---
+# ---------------- Helpers ----------------
 def load_catalog() -> Dict[str, Any]:
     items = []
     for path in glob.glob(str(CATALOG_DIR / "*.json")):
         with open(path, "r") as f:
-            try:
-                item = json.load(f)
-                items.append(item)
-            except Exception as e:
-                print(f"Failed to load catalog item {path}: {e}")
+            items.append(json.load(f))
     return {"version": "0.1.0", "items": items}
 
 def catalog_index(catalog):
     return {i["id"]: i for i in catalog["items"]}
 
-# --- Routes ---
+# ---------------- Routes ----------------
 
 @app.get("/health")
 def health():
-    return {"ok": True}
+    return {"ok": True, "version": app.version}
 
 @app.get("/v1/catalog")
-def get_catalog():
+def get_catalog(_: Principal = Depends(require_tenant)):
     return load_catalog()
 
-@app.post("/v1/engagements", response_model=Engagement)
-def create_engagement(body: EngagementCreate):
+@app.post("/v1/engagements", response_model=EngagementOut)
+def create_engagement(body: EngagementCreate, db: Session = Depends(get_db), principal: Principal = Depends(require_tenant)):
+    # enforce membership on requested tenant
+    ensure_membership(db, principal, body.tenant_id)
+    # set tenant for RLS
+    set_tenant_guc(db, body.tenant_id)
     eid = f"eng_{uuid.uuid4().hex[:12]}"
-    engagement = body.model_dump()
-    engagement["id"] = eid
-    ENGAGEMENTS[eid] = engagement
-    return engagement
+    e = Engagement(id=eid, tenant_id=body.tenant_id, name=body.name, type=body.type, scope=body.scope.model_dump())
+    db.add(e); db.commit()
+    return EngagementOut(id=e.id, tenant_id=e.tenant_id, name=e.name, type=e.type, scope=e.scope)
 
-@app.post("/v1/engagements/{engagement_id}/plan", response_model=Plan)
-def create_plan(engagement_id: str, body: PlanRequest):
-    if engagement_id not in ENGAGEMENTS:
+@app.post("/v1/engagements/{engagement_id}/plan", response_model=PlanOut)
+def create_plan(engagement_id: str, body: PlanRequest, db: Session = Depends(get_db), principal: Principal = Depends(require_tenant)):
+    # find engagement & set tenant GUC
+    e = db.execute(select(Engagement).where(Engagement.id == engagement_id)).scalar_one_or_none()
+    if not e:
         raise HTTPException(status_code=404, detail="engagement not found")
+    ensure_membership(db, principal, e.tenant_id)
+    set_tenant_guc(db, e.tenant_id)
+
     catalog = load_catalog()
     idx = catalog_index(catalog)
 
-    # Validate selected tests exist and basic conflicts/prereqs
-    steps = []
-    selected_ids = [t.id for t in body.selected_tests]
+    # validate selection
     errors = []
-
-    # Check existence
+    selected_ids = [t.id for t in body.selected_tests]
     for t in body.selected_tests:
         if t.id not in idx:
             errors.append({"test_id": t.id, "reason": "unknown test id"})
-
-    # Prereqs & conflicts
     for t in body.selected_tests:
-        if t.id not in idx: 
-            continue
-        item = idx[t.id]
+        item = idx.get(t.id); 
+        if not item: continue
         for pre in item.get("prerequisites", []):
             if pre not in selected_ids:
                 errors.append({"test_id": t.id, "reason": f"missing prerequisite: {pre}"})
         for c in item.get("exclusive_with", []):
             if c in selected_ids:
                 errors.append({"test_id": t.id, "reason": f"conflicts with: {c}"})
-
     if errors:
         raise HTTPException(status_code=422, detail={"validation": errors})
 
-    # Build steps deterministically (simple: order by category then id)
+    # steps (deterministic)
     ordered = sorted(body.selected_tests, key=lambda t: (idx[t.id].get("category","zzz"), t.id))
+    steps = []
     for t in ordered:
         item = idx[t.id]
         steps.append({
@@ -136,47 +146,35 @@ def create_plan(engagement_id: str, body: PlanRequest):
             "agent_constraints": item.get("requires", {}).get("agents", []),
             "outputs": item.get("outputs", []),
         })
-
-    plan_raw = {
-        "engagement_id": engagement_id,
-        "steps": steps,
-        "catalog_version": catalog["version"]
-    }
+    plan_raw = {"engagement_id": engagement_id, "steps": steps, "catalog_version": catalog["version"]}
     plan_hash = hashlib.sha256(json.dumps(plan_raw, sort_keys=True).encode()).hexdigest()
     pid = f"plan_{uuid.uuid4().hex[:12]}"
-    plan = {
-        "id": pid,
-        "engagement_id": engagement_id,
-        "plan_hash": plan_hash,
-        "steps": steps,
-        "catalog_version": catalog["version"]
-    }
-    PLANS[pid] = plan
-    return plan
+    p = Plan(id=pid, tenant_id=e.tenant_id, engagement_id=engagement_id, plan_hash=plan_hash, data=plan_raw, catalog_version=catalog["version"])
+    db.add(p); db.commit()
+    return PlanOut(id=p.id, engagement_id=p.engagement_id, plan_hash=p.plan_hash, steps=steps, catalog_version=p.catalog_version)
 
-@app.post("/v1/tests", response_model=Run)
-def start_test(body: StartTestRequest):
-    if body.engagement_id not in ENGAGEMENTS:
+@app.post("/v1/tests", response_model=RunOut)
+def start_test(body: StartTestRequest, db: Session = Depends(get_db), principal: Principal = Depends(require_tenant)):
+    # fetch engagement & plan to derive tenant
+    e = db.execute(select(Engagement).where(Engagement.id == body.engagement_id)).scalar_one_or_none()
+    if not e:
         raise HTTPException(status_code=404, detail="engagement not found")
-    if body.plan_id not in PLANS:
-        raise HTTPException(status_code=404, detail="plan not found")
-
+    ensure_membership(db, principal, e.tenant_id)
+    set_tenant_guc(db, e.tenant_id)
+    p = db.execute(select(Plan).where(Plan.id == body.plan_id, Plan.engagement_id == body.engagement_id)).scalar_one_or_none()
+    if not p:
+        raise HTTPException(status_code=404, detail="plan not found for engagement")
     rid = f"run_{uuid.uuid4().hex[:12]}"
-    run = {"id": rid, "engagement_id": body.engagement_id, "plan_id": body.plan_id, "status": "running", "created_at": time.time()}
-    RUNS[rid] = run
-    return run
+    r = Run(id=rid, tenant_id=e.tenant_id, engagement_id=e.id, plan_id=p.id, status="running")
+    db.add(r); db.commit()
+    return RunOut(id=r.id, engagement_id=r.engagement_id, plan_id=r.plan_id, status=r.status)
 
-@app.get("/v1/tests/{run_id}", response_model=Run)
-def get_run(run_id: str):
-    run = RUNS.get(run_id)
-    if not run:
+@app.get("/v1/tests/{run_id}", response_model=RunOut)
+def get_run(run_id: str, db: Session = Depends(get_db), principal: Principal = Depends(require_tenant)):
+    # naive fetch; in prod wrap with tenant filter or rely on RLS
+    r = db.execute(select(Run).where(Run.id == run_id)).scalar_one_or_none()
+    if not r:
         raise HTTPException(status_code=404, detail="run not found")
-    return run
-
-# Placeholder SSE (not functional in this skeleton; implement later)
-@app.get("/v1/tests/{run_id}/stream")
-def stream_run(run_id: str):
-    def gen():
-        yield "event: keepalive\n"
-        yield "data: {\"ok\": true}\n\n"
-    return StreamingResponse(gen(), media_type="text/event-stream")
+    # set tenant to run's tenant to satisfy RLS on related reads
+    set_tenant_guc(db, r.tenant_id)
+    return RunOut(id=r.id, engagement_id=r.engagement_id, plan_id=r.plan_id, status=r.status)
