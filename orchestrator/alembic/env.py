@@ -13,7 +13,11 @@ if "DATABASE_URL" in os.environ:
     config.set_section_option(section, "sqlalchemy.url", os.environ["DATABASE_URL"])
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    try:
+        fileConfig(config.config_file_name)
+    except Exception as e:
+        import sys
+        print(f"[alembic] logging config load skipped: {e}", file=sys.stderr)
 
 target_metadata = Base.metadata
 

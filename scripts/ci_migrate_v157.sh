@@ -14,6 +14,6 @@ for i in $(seq 1 60); do
 done
 
 echo "== Run Alembic migrations (workdir=/app/orchestrator, PYTHONPATH=/app) =="
-docker compose "${CF[@]}" run --rm --no-deps \
+docker compose "${CF[@]}" run --rm --no-deps -e ALEMBIC_RUNNING=1 \
   -e PYTHONPATH=/app -w /app/orchestrator orchestrator \
   bash -lc 'python -m pip install --no-cache-dir psycopg2-binary==2.9.9 >/dev/null 2>&1 || true; alembic -c alembic.ci.ini upgrade head'
