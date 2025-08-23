@@ -5,73 +5,41 @@ __pycache__/
 *.so
 .Python
 build/
-develop-eggs/
 dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
 *.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
 .pytest_cache/
 .coverage
-.coverage.*
-.cache
 .tox/
 .mypy_cache/
 .ruff_cache/
 
 # Virtual Environments
 venv/
-ENV/
-env/
 .venv/
+env/
 .env/
 
-# IDEs
+# Environment files
+.env
+.env.local
+*.env
+!.env.example
+
+# IDE
 .vscode/
 .idea/
-*.sublime-project
-*.sublime-workspace
 *.swp
 *.swo
 *~
 
 # OS
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
 Thumbs.db
-ehthumbs.db
 __MACOSX/
 
-# Environment
-.env
-.env.local
-.env.*.local
-*.env
-!.env.example
-
 # Logs
-logs/
 *.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Node
-node_modules/
-.npm
-.yarn-integrity
+logs/
 
 # Docker
 .dockerignore
@@ -82,35 +50,14 @@ uploads/
 temp/
 tmp/
 backup*/
-*.backup
-*.bak
-*.orig
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log*
 
 # Security
 *.key
 *.pem
 *.crt
-*.p12
 secrets/
-credentials/
-
-# Database
-*.db
-*.sqlite
-*.sqlite3
-*.sql
-!init.sql
-
-# Archives
-*.zip
-*.tar
-*.tar.gz
-*.rar
-*.7z
-
-# IDE specific
-.project
-.pydevproject
-.settings/
-nbproject/
-.nb-gradle/
