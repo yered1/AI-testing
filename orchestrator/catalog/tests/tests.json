@@ -1,0 +1,588 @@
+{
+  "network_nmap_tcp_top_1000": {
+    "id": "network_nmap_tcp_top_1000",
+    "name": "Nmap TCP Top 1000 Ports",
+    "description": "Scan top 1000 TCP ports using nmap",
+    "category": "Network Discovery",
+    "agent_type": "kali_os",
+    "risk_level": "low",
+    "requires_approval": false,
+    "estimated_duration": 300,
+    "tags": [
+      "network",
+      "discovery",
+      "nmap",
+      "ports"
+    ],
+    "params": {
+      "target": {
+        "type": "string",
+        "required": true,
+        "description": "Target IP or hostname"
+      }
+    }
+  },
+  "network_nmap_tcp_full": {
+    "id": "network_nmap_tcp_full",
+    "name": "Nmap Full TCP Scan",
+    "description": "Full TCP port scan (all 65535 ports)",
+    "category": "Network Discovery",
+    "agent_type": "kali_os",
+    "risk_level": "medium",
+    "requires_approval": true,
+    "estimated_duration": 3600,
+    "tags": [
+      "network",
+      "discovery",
+      "nmap",
+      "comprehensive"
+    ]
+  },
+  "network_nmap_udp_top_200": {
+    "id": "network_nmap_udp_top_200",
+    "name": "Nmap UDP Top 200 Ports",
+    "description": "Scan top 200 UDP ports",
+    "category": "Network Discovery",
+    "agent_type": "kali_os",
+    "risk_level": "medium",
+    "requires_approval": false,
+    "estimated_duration": 600,
+    "tags": [
+      "network",
+      "discovery",
+      "nmap",
+      "udp"
+    ]
+  },
+  "network_dnsx_resolve": {
+    "id": "network_dnsx_resolve",
+    "name": "DNS Resolution",
+    "description": "Resolve DNS records using dnsx",
+    "category": "Discovery",
+    "agent_type": "web_discovery",
+    "risk_level": "low",
+    "requires_approval": false,
+    "estimated_duration": 60,
+    "tags": [
+      "dns",
+      "discovery",
+      "reconnaissance"
+    ]
+  },
+  "web_httpx_probe": {
+    "id": "web_httpx_probe",
+    "name": "HTTP Probe",
+    "description": "Probe for HTTP/HTTPS services",
+    "category": "Web Discovery",
+    "agent_type": "web_discovery",
+    "risk_level": "low",
+    "requires_approval": false,
+    "estimated_duration": 120,
+    "tags": [
+      "web",
+      "discovery",
+      "http"
+    ]
+  },
+  "web_zap_baseline": {
+    "id": "web_zap_baseline",
+    "name": "ZAP Baseline Scan",
+    "description": "OWASP ZAP baseline scan (passive)",
+    "category": "Web Application",
+    "agent_type": "zap",
+    "risk_level": "low",
+    "requires_approval": false,
+    "estimated_duration": 600,
+    "tags": [
+      "web",
+      "zap",
+      "owasp",
+      "passive"
+    ]
+  },
+  "web_zap_auth_full": {
+    "id": "web_zap_auth_full",
+    "name": "ZAP Full Authenticated Scan",
+    "description": "Full authenticated ZAP active scan",
+    "category": "Web Application",
+    "agent_type": "zap_auth",
+    "risk_level": "high",
+    "requires_approval": true,
+    "estimated_duration": 1800,
+    "tags": [
+      "web",
+      "zap",
+      "owasp",
+      "active",
+      "authenticated"
+    ]
+  },
+  "web_nuclei_default": {
+    "id": "web_nuclei_default",
+    "name": "Nuclei Default Scan",
+    "description": "Run Nuclei with default templates",
+    "category": "Web Application",
+    "agent_type": "nuclei",
+    "risk_level": "low",
+    "requires_approval": false,
+    "estimated_duration": 900,
+    "tags": [
+      "web",
+      "nuclei",
+      "vulnerability"
+    ]
+  },
+  "code_semgrep_default": {
+    "id": "code_semgrep_default",
+    "name": "Semgrep Code Analysis",
+    "description": "Static code analysis with Semgrep",
+    "category": "Code Review",
+    "agent_type": "semgrep",
+    "risk_level": "low",
+    "requires_approval": false,
+    "estimated_duration": 300,
+    "tags": [
+      "code",
+      "sast",
+      "semgrep"
+    ]
+  },
+  "mobile_apk_static_default": {
+    "id": "mobile_apk_static_default",
+    "name": "APK Static Analysis",
+    "description": "Static analysis of Android APK",
+    "category": "Mobile",
+    "agent_type": "mobile_apk",
+    "risk_level": "low",
+    "requires_approval": false,
+    "estimated_duration": 600,
+    "tags": [
+      "mobile",
+      "android",
+      "apk",
+      "static"
+    ]
+  },
+  "remote_kali_nmap_tcp_top_1000": {
+    "id": "remote_kali_nmap_tcp_top_1000",
+    "name": "Remote Kali Nmap Scan",
+    "description": "Nmap scan via remote Kali agent",
+    "category": "Network",
+    "agent_type": "kali_remote",
+    "risk_level": "low",
+    "requires_approval": false,
+    "estimated_duration": 300,
+    "tags": [
+      "network",
+      "nmap",
+      "remote"
+    ]
+  },
+  "remote_kali_run_tool": {
+    "id": "remote_kali_run_tool",
+    "name": "Run Tool on Remote Kali",
+    "description": "Execute allowed tool on remote Kali",
+    "category": "Custom",
+    "agent_type": "kali_remote",
+    "risk_level": "medium",
+    "requires_approval": true,
+    "estimated_duration": 600,
+    "tags": [
+      "remote",
+      "custom",
+      "tool"
+    ]
+  },
+  "cloud_aws_audit": {
+    "id": "cloud_aws_audit",
+    "name": "AWS Cloud Security Audit",
+    "description": "Comprehensive AWS cloud configuration and security audit using ScoutSuite and custom checks",
+    "category": "Cloud Security",
+    "agent_type": "cloud_aws",
+    "risk_level": "low",
+    "requires_approval": false,
+    "estimated_duration": 900,
+    "tags": [
+      "cloud",
+      "aws",
+      "audit",
+      "configuration"
+    ],
+    "params": {
+      "services": {
+        "type": "array",
+        "default": [
+          "iam",
+          "ec2",
+          "s3",
+          "rds",
+          "cloudtrail"
+        ],
+        "description": "AWS services to audit"
+      },
+      "use_scoutsuite": {
+        "type": "boolean",
+        "default": true,
+        "description": "Use ScoutSuite for comprehensive scanning"
+      },
+      "custom_checks": {
+        "type": "boolean",
+        "default": true,
+        "description": "Run custom security checks"
+      }
+    }
+  },
+  "cloud_azure_audit": {
+    "id": "cloud_azure_audit",
+    "name": "Azure Cloud Security Audit",
+    "description": "Azure cloud configuration and security assessment",
+    "category": "Cloud Security",
+    "agent_type": "cloud_azure",
+    "risk_level": "low",
+    "requires_approval": false,
+    "estimated_duration": 900,
+    "tags": [
+      "cloud",
+      "azure",
+      "audit",
+      "configuration"
+    ]
+  },
+  "cloud_gcp_audit": {
+    "id": "cloud_gcp_audit",
+    "name": "GCP Cloud Security Audit",
+    "description": "Google Cloud Platform security assessment",
+    "category": "Cloud Security",
+    "agent_type": "cloud_gcp",
+    "risk_level": "low",
+    "requires_approval": false,
+    "estimated_duration": 900,
+    "tags": [
+      "cloud",
+      "gcp",
+      "audit",
+      "configuration"
+    ]
+  },
+  "exploit_vulnerability": {
+    "id": "exploit_vulnerability",
+    "name": "Automated Vulnerability Exploitation",
+    "description": "Attempt to exploit discovered vulnerabilities using Metasploit",
+    "category": "Exploitation",
+    "agent_type": "exploitation",
+    "risk_level": "critical",
+    "requires_approval": true,
+    "estimated_duration": 1800,
+    "tags": [
+      "exploitation",
+      "metasploit",
+      "intrusive",
+      "red_team"
+    ],
+    "params": {
+      "safe_mode": {
+        "type": "boolean",
+        "default": true,
+        "description": "Run in safe mode (report only, no actual exploitation)"
+      }
+    }
+  },
+  "privilege_escalation_check": {
+    "id": "privilege_escalation_check",
+    "name": "Privilege Escalation Assessment",
+    "description": "Check for privilege escalation vulnerabilities on compromised systems",
+    "category": "Post-Exploitation",
+    "agent_type": "exploitation",
+    "risk_level": "high",
+    "requires_approval": true,
+    "estimated_duration": 600,
+    "tags": [
+      "privilege_escalation",
+      "post_exploitation",
+      "internal"
+    ]
+  },
+  "credential_harvesting": {
+    "id": "credential_harvesting",
+    "name": "Credential Harvesting",
+    "description": "Attempt to harvest credentials from compromised systems",
+    "category": "Post-Exploitation",
+    "agent_type": "exploitation",
+    "risk_level": "critical",
+    "requires_approval": true,
+    "estimated_duration": 900,
+    "tags": [
+      "credentials",
+      "post_exploitation",
+      "lateral_movement"
+    ]
+  },
+  "web_fuzzing_advanced": {
+    "id": "web_fuzzing_advanced",
+    "name": "Advanced Web Fuzzing",
+    "description": "Advanced fuzzing of web application inputs for vulnerabilities",
+    "category": "Web Application",
+    "agent_type": "web_fuzzer",
+    "risk_level": "medium",
+    "requires_approval": false,
+    "estimated_duration": 1200,
+    "tags": [
+      "web",
+      "fuzzing",
+      "injection",
+      "active"
+    ],
+    "params": {
+      "wordlists": {
+        "type": "array",
+        "default": [
+          "common",
+          "sql",
+          "xss",
+          "xxe"
+        ],
+        "description": "Fuzzing wordlists to use"
+      },
+      "threads": {
+        "type": "integer",
+        "default": 10,
+        "description": "Number of parallel threads"
+      }
+    }
+  },
+  "active_directory_enum": {
+    "id": "active_directory_enum",
+    "name": "Active Directory Enumeration",
+    "description": "Enumerate Active Directory environment for attack paths",
+    "category": "Internal Network",
+    "agent_type": "ad_agent",
+    "risk_level": "medium",
+    "requires_approval": false,
+    "estimated_duration": 1800,
+    "tags": [
+      "active_directory",
+      "internal",
+      "enumeration",
+      "bloodhound"
+    ]
+  },
+  "kerberos_attacks": {
+    "id": "kerberos_attacks",
+    "name": "Kerberos Attack Suite",
+    "description": "Perform Kerberoasting, ASREPRoasting, and other Kerberos attacks",
+    "category": "Internal Network",
+    "agent_type": "ad_agent",
+    "risk_level": "high",
+    "requires_approval": true,
+    "estimated_duration": 900,
+    "tags": [
+      "kerberos",
+      "active_directory",
+      "credential",
+      "internal"
+    ]
+  },
+  "container_security_scan": {
+    "id": "container_security_scan",
+    "name": "Container Security Assessment",
+    "description": "Scan Docker/Kubernetes containers for vulnerabilities",
+    "category": "Container Security",
+    "agent_type": "container_agent",
+    "risk_level": "low",
+    "requires_approval": false,
+    "estimated_duration": 600,
+    "tags": [
+      "container",
+      "docker",
+      "kubernetes",
+      "devsecops"
+    ]
+  },
+  "api_security_test": {
+    "id": "api_security_test",
+    "name": "API Security Testing",
+    "description": "Comprehensive API security testing including authentication, authorization, and injection",
+    "category": "API Security",
+    "agent_type": "api_agent",
+    "risk_level": "medium",
+    "requires_approval": false,
+    "estimated_duration": 900,
+    "tags": [
+      "api",
+      "rest",
+      "graphql",
+      "authentication"
+    ],
+    "params": {
+      "api_spec": {
+        "type": "string",
+        "description": "OpenAPI/Swagger specification URL or file"
+      },
+      "auth_type": {
+        "type": "string",
+        "default": "bearer",
+        "description": "Authentication type (bearer, basic, oauth2)"
+      }
+    }
+  },
+  "wireless_security_assessment": {
+    "id": "wireless_security_assessment",
+    "name": "Wireless Network Security Assessment",
+    "description": "Test wireless network security including WPA/WPA2/WPA3",
+    "category": "Wireless Security",
+    "agent_type": "wireless_agent",
+    "risk_level": "high",
+    "requires_approval": true,
+    "estimated_duration": 1800,
+    "tags": [
+      "wireless",
+      "wifi",
+      "wpa",
+      "physical"
+    ]
+  },
+  "social_engineering_test": {
+    "id": "social_engineering_test",
+    "name": "Social Engineering Assessment",
+    "description": "Controlled social engineering test (phishing, vishing, etc.)",
+    "category": "Social Engineering",
+    "agent_type": "social_agent",
+    "risk_level": "high",
+    "requires_approval": true,
+    "estimated_duration": 2400,
+    "tags": [
+      "social_engineering",
+      "phishing",
+      "human",
+      "awareness"
+    ]
+  },
+  "supply_chain_analysis": {
+    "id": "supply_chain_analysis",
+    "name": "Supply Chain Security Analysis",
+    "description": "Analyze third-party dependencies and supply chain risks",
+    "category": "Supply Chain",
+    "agent_type": "dependency_agent",
+    "risk_level": "low",
+    "requires_approval": false,
+    "estimated_duration": 600,
+    "tags": [
+      "supply_chain",
+      "dependencies",
+      "sbom",
+      "vulnerability"
+    ]
+  },
+  "iot_device_assessment": {
+    "id": "iot_device_assessment",
+    "name": "IoT Device Security Assessment",
+    "description": "Security assessment of IoT devices and protocols",
+    "category": "IoT Security",
+    "agent_type": "iot_agent",
+    "risk_level": "medium",
+    "requires_approval": false,
+    "estimated_duration": 1200,
+    "tags": [
+      "iot",
+      "embedded",
+      "mqtt",
+      "coap"
+    ]
+  },
+  "blockchain_smart_contract": {
+    "id": "blockchain_smart_contract",
+    "name": "Smart Contract Security Audit",
+    "description": "Audit smart contracts for vulnerabilities",
+    "category": "Blockchain",
+    "agent_type": "blockchain_agent",
+    "risk_level": "low",
+    "requires_approval": false,
+    "estimated_duration": 1800,
+    "tags": [
+      "blockchain",
+      "smart_contract",
+      "ethereum",
+      "solidity"
+    ]
+  },
+  "ransomware_simulation": {
+    "id": "ransomware_simulation",
+    "name": "Ransomware Attack Simulation",
+    "description": "Simulate ransomware attack patterns (safe mode)",
+    "category": "Red Team",
+    "agent_type": "red_team_agent",
+    "risk_level": "critical",
+    "requires_approval": true,
+    "estimated_duration": 3600,
+    "tags": [
+      "ransomware",
+      "simulation",
+      "red_team",
+      "incident_response"
+    ]
+  },
+  "data_exfiltration_test": {
+    "id": "data_exfiltration_test",
+    "name": "Data Exfiltration Testing",
+    "description": "Test data loss prevention and exfiltration detection",
+    "category": "Red Team",
+    "agent_type": "red_team_agent",
+    "risk_level": "high",
+    "requires_approval": true,
+    "estimated_duration": 1200,
+    "tags": [
+      "exfiltration",
+      "dlp",
+      "data_loss",
+      "red_team"
+    ]
+  },
+  "persistence_mechanisms": {
+    "id": "persistence_mechanisms",
+    "name": "Persistence Mechanism Testing",
+    "description": "Test ability to establish persistence on compromised systems",
+    "category": "Red Team",
+    "agent_type": "red_team_agent",
+    "risk_level": "critical",
+    "requires_approval": true,
+    "estimated_duration": 900,
+    "tags": [
+      "persistence",
+      "backdoor",
+      "red_team",
+      "apt"
+    ]
+  },
+  "edr_evasion_test": {
+    "id": "edr_evasion_test",
+    "name": "EDR/AV Evasion Testing",
+    "description": "Test endpoint detection and response evasion techniques",
+    "category": "Red Team",
+    "agent_type": "evasion_agent",
+    "risk_level": "high",
+    "requires_approval": true,
+    "estimated_duration": 1500,
+    "tags": [
+      "evasion",
+      "edr",
+      "antivirus",
+      "bypass"
+    ]
+  },
+  "physical_security_assessment": {
+    "id": "physical_security_assessment",
+    "name": "Physical Security Assessment",
+    "description": "Test physical security controls (locks, badges, tailgating)",
+    "category": "Physical Security",
+    "agent_type": "physical_agent",
+    "risk_level": "high",
+    "requires_approval": true,
+    "estimated_duration": 7200,
+    "tags": [
+      "physical",
+      "locks",
+      "badges",
+      "access_control"
+    ]
+  }
+}

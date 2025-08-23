@@ -1,44 +1,100 @@
-name: CI v5 (build → migrate → api → smoke)
+name: CI
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, develop ]
   pull_request:
+    branches: [ main ]
 
 jobs:
-  ci:
+  test:
     runs-on: ubuntu-latest
+    
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Login to Docker Hub (anon)
-        run: echo "using public pulls"
-
-      - name: Migrate (DB+OPA up; alembic from /app/orchestrator)
-        run: bash scripts/ci_migrate_v156.sh
-
-      - name: Bring up full stack
-        run: bash scripts/ci_stack_up_v156.sh
-
-      - name: Wait for API
-        run: bash scripts/wait_for_api_v156.sh
-
-      - name: Smoke
-        run: python scripts/ci_smoke.py
-
-      - name: Print logs on fail
-        if: failure()
-        run: bash scripts/print_logs_on_fail_v156.sh
-      - name: Build orchestrator
-        run: docker compose -f infra/docker-compose.v2.yml build orchestrator
-      - name: Migrate DB (CI)
-        run: bash scripts/ci_migrate_v157.sh
-      - name: Bring up stack
-        run: bash scripts/ci_stack_up_v157.sh
-      - name: Wait for API
-        run: bash scripts/wait_for_api_v157.sh
+    - uses: actions/checkout@v3
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+    
+    - name: Create network
+      run: docker network create ai-testing-net || true
+    
+    - name: Start services
+      run: |
+        # Use the correct OPA image (not rootless variant)
+        export OPA_IMAGE=openpolicyagent/opa:0.65.0
+        docker compose -f infra/docker-compose.v2.yml up -d db opa
+        
+        # Wait for database
+        echo "Waiting for PostgreSQL..."
+        for i in {1..30}; do
+          if docker compose -f infra/docker-compose.v2.yml exec -T db pg_isready -U pentest; then
+            echo "PostgreSQL is ready"
+            break
+          fi
+          echo "Waiting for PostgreSQL... ($i/30)"
+          sleep 2
+        done
+        
+        # Start orchestrator
+        docker compose -f infra/docker-compose.v2.yml up -d orchestrator
+        
+        # Wait for orchestrator
+        echo "Waiting for Orchestrator..."
+        for i in {1..30}; do
+          if curl -f http://localhost:8080/health 2>/dev/null; then
+            echo "Orchestrator is ready"
+            break
+          fi
+          echo "Waiting for Orchestrator... ($i/30)"
+          sleep 2
+        done
+    
+    - name: Run migrations
+      run: |
+        docker compose -f infra/docker-compose.v2.yml exec -T orchestrator \
+          alembic upgrade head
+    
+    - name: Run smoke tests
+      run: |
+        # Install Python dependencies
+        pip install requests
+        
+        # Run smoke test
+        python scripts/ci_smoke.py
+    
+    - name: Test catalog loading
+      run: |
+        # Test catalog endpoint
+        curl -f http://localhost:8080/v1/catalog \
+          -H 'X-Dev-User: ci' \
+          -H 'X-Dev-Email: ci@test.com' \
+          -H 'X-Tenant-Id: t_demo' | jq '.'
+    
+    - name: Test agent registration
+      run: |
+        # Create agent token
+        TOKEN=$(curl -s -X POST http://localhost:8080/v2/agent_tokens \
+          -H 'Content-Type: application/json' \
+          -H 'X-Dev-User: ci' \
+          -H 'X-Dev-Email: ci@test.com' \
+          -H 'X-Tenant-Id: t_demo' \
+          -d '{"tenant_id":"t_demo","name":"ci-agent"}' | jq -r .token)
+        
+        echo "Agent token created: ${TOKEN:0:10}..."
+    
+    - name: Collect logs on failure
+      if: failure()
+      run: |
+        echo "=== Orchestrator Logs ==="
+        docker compose -f infra/docker-compose.v2.yml logs orchestrator
+        echo "=== Database Logs ==="
+        docker compose -f infra/docker-compose.v2.yml logs db
+        echo "=== OPA Logs ==="
+        docker compose -f infra/docker-compose.v2.yml logs opa
+    
+    - name: Cleanup
+      if: always()
+      run: |
+        docker compose -f infra/docker-compose.v2.yml down -v
+        docker network rm ai-testing-net || true
