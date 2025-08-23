@@ -1,151 +1,171 @@
+# AI-Testing — Updated Development Plan (Replacement)
+_Date: 2025-08-23 22:43 UTC_
 
-# Development Plan (Actionable for LLM Agents)
+This document **replaces** the existing `DEVELOPMENT_PLAN.md`. It is based on a full, per-file review of the attached repository and maps what **exists now** vs. what is **missing**, then lays out **specific next steps** with clear owners and acceptance criteria.
 
-This plan turns the audit into concrete steps. Claude (or any LLM) should **only create new files** (no in-place edits), placing them under `patches/v2.0.0/` with clear filenames. Each new file must include:
-- The **relative destination path** in the first commented line.
-- The **rationale** (why the change is needed).
-- The **full replacement content** for that file or a **unified diff** if minimal changes.
+## 1) Repository Snapshot
 
-After a batch, a human/dev can apply them and commit.
+- Project root: `AI-testing/`
+- Files (source tree only): **262**
+- macOS resource files in ZIP (`__MACOSX`): **326** _(delete; non-source)_
+- Python files: **98**  • Routes discovered: **82**
+- JSON: **52** (all valid) • YAML: **9** (all valid)
+- Quick issues: 1 Python file(s) with syntax errors; 15 Python file(s) contain '...' placeholders (incomplete stubs)
+
+### Notable mismatches / blockers
+
+- infra/docker-compose.agents.enhanced.yml references 'infra/agent.aws.Dockerfile' but file on disk is 'infra/agent.aws.DockerFile' (case-sensitive mismatch)
+- Agents and compose use both ORCH_URL and ORCHESTRATOR_URL; standardize to a single env var (e.g., ORCH_URL)
+- Auth/tenancy reference models.Membership and Role enums which are not present; add models/membership.py and models/role.py or adjust code.
+- orchestrator/reports missing __init__.py
+- Two FastAPI apps exist (orchestrator/app.py and orchestrator/routers/app.py). Docker runs app.py (stub/in-memory). Consolidate to a single app and include all routers.
+
+## 2) Feature Matrix (what’s present)
+
+| Capability | Status |
+|---|---|
+| Agents Register | ✅ Available |
+| Agents Lease | ✅ Available |
+| Agents Lease2 | ✅ Available |
+| Jobs Complete | ✅ Available |
+| Artifacts Upload | ✅ Available |
+| Artifacts Index | ✅ Available |
+| Artifacts Download | ✅ Available |
+| Findings Post | ✅ Available |
+| Reports Enhanced Html | ✅ Available |
+| Reports Bundle | ✅ Available |
+| Brain Autoplan V2 | ✅ Available |
+| Brain V3 Guarded | ✅ Available |
+| Ui Routes | ✅ Available |
+| Health | ✅ Available |
+
+**Notes**
+- Enhanced PDF reports require `REPORTER_URL` (e.g., a Gotenberg service); compose does not currently include a reporter.
+- Artifacts index and downloads are implemented; ensure `EVIDENCE_DIR` is mounted as a volume.
+
+## 3) Architecture as-implemented (today)
+
+- **Orchestrator (FastAPI)** — Both `orchestrator/app.py` (simplified, in-memory pieces) and `orchestrator/routers/app.py` (modular, DB-backed routers). Docker runs `uvicorn app:app`, i.e., the simpler app. Consolidation required.
+- **DB layer** — `orchestrator/db.py` provides `Base` and `get_db`. However, ORM models import `Base` from `orchestrator/models/base.py`, which is a stub. Alembic migrations (`orchestrator/alembic/versions/0001..0008`) appear complete but may not load metadata until `Base` is fixed.
+- **Routers (v2/v3 + UI)** — Rich set of v2 endpoints (agents bus, artifacts, findings, reports) plus v3 brain (`v3_brain.py`, `v3_brain_guarded.py`). Jinja UI routes under `/ui/*` and a minimal React app in `/ui`.
+- **Agents** — Multiple agents (`agents/*`) plus a generic `agent/agent.py`. Authentication headers vary (`X-Agent-Token` vs `X-Agent-Id`/`X-Agent-Key`). Uploads hit `/v2/jobs/{{id}}/artifacts` and events/complete endpoints.
+- **Catalog** — Test definitions under `orchestrator/catalog/tests` and packs under `orchestrator/catalog/packs`.
+- **Reports** — Templating under `orchestrator/report_templates/*`, code in `orchestrator/reports/*` (missing `__init__.py`).
+- **Policies (OPA)** — Rego policies in `policies/` and `policies_enabled/`; compose includes `opa`.
+
+## 4) What’s missing or inconsistent (gap analysis)
+
+**Critical (must-fix to reach a runnable, cohesive v2 stack)**
+1. **Single source of truth for the FastAPI app.** Decide on `routers/app.py` (recommended) and update Docker entrypoint to `uvicorn routers.app:app`. Remove/merge the stub in `orchestrator/app.py`, porting any needed endpoints.
+2. **Unify SQLAlchemy base.** Replace `orchestrator/models/base.py` with a thin import from `orchestrator/db.py` _or_ move `Base` to `models/base.py` and import it from `db.py`. Ensure Alembic `env.py` imports the right `Base`.
+3. **Auth/tenancy model.** `auth.py`/`tenancy.py` reference `Membership` + `Role` that don’t exist. Add `models/membership.py` and a simple `Role` enum (or collapse to the existing `User.role` string). Update queries accordingly.
+4. **Agent auth contract.** Standardize on **`X-Agent-Id` + `X-Agent-Key`** for agents and **`ORCH_URL`** for the orchestrator URL. Update all agents and compose files. Remove the legacy `X-Agent-Token` path unless you intend to support both.
+5. **Broken files.** Fix `orchestrator/bootstrap_extras.py` (syntax) and add `orchestrator/reports/__init__.py`.
+
+**High priority**
+6. **Brain providers.** `openai_chat.py` / `anthropic.py` contain scaffolding; wire them via `plan_engine.py` and expose via `v3_brain_guarded.py`. Add environment-driven enable/disable and good error messaging.
+7. **Reports → PDF.** Add `reporter` service to compose (e.g., Gotenberg) and pass `REPORTER_URL`. Alternatively, add a pure-Python fallback (e.g., WeasyPrint) under a feature flag.
+8. **Compose correctness.** Fix case mismatch for `infra/agent.aws.DockerFile` vs `docker-compose.agents.enhanced.yml`. Verify volumes: mount `/evidence` and `alembic` correctly.
+9. **Consistency of settings.** Centralize env names in `orchestrator/settings.py` and consume there throughout (DB URL, EVIDENCE_DIR, OPA_URL, REDIS_URL, LLM keys).
+
+**Medium**
+10. **CI pipeline.** Add GH Actions workflow to build, run migrations, and execute smoke tests (`scripts/ci_*`). Cache Docker layers and Python deps.
+11. **UI.** Either serve the Jinja UI only (server-side) or build & host the React UI from `/ui` (vite build) behind `/ui/`. Avoid split-brain UIs.
+12. **Docs.** Fill out `docs/API.md` and include OpenAPI link, common curls, and security model.
+
+## 5) Concrete next steps (by area)
+
+### A. Orchestrator app (owner: Backend)
+- [ ] Move canonical app to `routers/app.py`.  
+  **Change**: In `infra/orchestrator.Dockerfile`, set the CMD to `uvicorn routers.app:app --host 0.0.0.0 --port 8080`.  
+  **Accept**: `/docs` loads; `/health` returns 200; v2/v3 routes visible.
+
+- [ ] Delete or archive `orchestrator/app.py` _or_ make it import and re-export `routers.app:app`.  
+  **Accept**: one app only; no divergent behavior.
+
+- [ ] Add `orchestrator/bootstrap_extras.py` patch:
+  ```python
+  # orchestrator/bootstrap_extras.py
+  from .routers import (
+      v2_agents_bus, v2_agents_bus_lease2, v2_artifacts, v2_artifacts_index,
+      v2_artifacts_downloads, findings_v2, v2_findings_reports,
+      v2_quotas_approvals, v2_listings, v2_brain, v3_brain_guarded,
+      ui_pages, ui_brain, ui_code, ui_builder, ui_mobile
+  )
+
+  def mount_all(app):
+      for r in [v2_agents_bus, v2_agents_bus_lease2, v2_artifacts, v2_artifacts_index,
+                v2_artifacts_downloads, findings_v2, v2_findings_reports,
+                v2_quotas_approvals, v2_listings, v2_brain, v3_brain_guarded,
+                ui_pages, ui_brain, ui_code, ui_builder, ui_mobile]:
+          app.include_router(r.router)
+  ```
+
+### B. DB & migrations (owner: Backend)
+- [ ] Replace `orchestrator/models/base.py` with:
+  ```python
+  # orchestrator/models/base.py
+  from ..db import Base, get_db  # re-export for model modules and Alembic
+  ```
+  **Accept**: `alembic revision --autogenerate` and `alembic upgrade head` work.
+
+- [ ] Implement missing `Membership` model and optional `Role` enum; update `auth.py`/`tenancy.py`.
+  **Accept**: Joining a tenant yields a `Membership` row; guarded routes pass.
+
+- [ ] Add `orchestrator/reports/__init__.py` (empty).  
+  **Accept**: `from orchestrator.reports import render` succeeds.
+
+### C. Agents & Bus (owner: Agents)
+- [ ] Standardize env to **`ORCH_URL`** across all agents and compose files.  
+  **Accept**: Agents come online and lease jobs.
+
+- [ ] Standardize auth to **`X-Agent-Id` + `X-Agent-Key`**. Remove legacy `X-Agent-Token` code paths.  
+  **Accept**: `/v2/agents/register` returns id/key; `/v2/agents/lease2` works with `kinds`.
+
+- [ ] Fix compose case mismatch: rename file to `infra/agent.aws.Dockerfile` _or_ update compose to `agent.aws.DockerFile`.
+  **Accept**: `docker compose -f infra/docker-compose.agents.enhanced.yml build` succeeds.
+
+### D. Brain (owner: AI)
+- [ ] Finish `openai_chat.py` and `anthropic.py` implementations; respect `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`.  
+  **Accept**: `/v3/brain/plan/guarded` returns a plan using selected provider; Heuristic fallback works with `BRAIN_PROVIDER=heuristic`.
+
+- [ ] Add `GET /v3/brain/providers` status endpoint (if not already exposed) returning availability and default.  
+  **Accept**: returns provider info; toggles via env.
+
+### E. Reports (owner: Backend)
+- [ ] Add `reporter` service (e.g., Gotenberg) to compose and set `REPORTER_URL`.  
+  **Accept**: `/v2/reports/enhanced/run/{run}.pdf` returns a file.
+
+- [ ] Ensure `EVIDENCE_DIR` volume mounted and indexed by `/v2/runs/{id}/artifacts/index.json`.  
+  **Accept**: index lists uploaded artifacts; downloads authorized.
+
+### F. CI/CD (owner: DevOps)
+- [ ] Add `.github/workflows/ci.yml` running `scripts/ci_stack.sh`, plus `scripts/print_logs_on_fail.sh`.  
+  **Accept**: PRs build, migrate DB, boot stack, pass smoke.
+
+### G. UI (owner: Frontend)
+- [ ] Decide on UI path. If React: build with Vite and serve static from orchestrator under `/ui/`. If Jinja: remove `/ui` React folder.  
+  **Accept**: One UI path; end-to-end flows work (create engagement → run plan → view findings/artifacts/report).
+
+## 6) Risks & mitigations
+
+- **Security**: Never enable intrusive tests by default. Keep `ALLOW_ACTIVE_SCAN=0` and add approvals flow. Enforce OPA once the policy matures.
+- **Provider bill shock**: Add per-tenant quotas and require explicit opt-in for LLM providers.
+- **Data**: Mount `/evidence` and back it up; store artifact metadata in DB.
+
+## 7) Milestone plan (2 weeks)
+
+**Day 1–2**: App consolidation, Base fix, missing models.  
+**Day 3–4**: Agent auth env standardization; compose fixes.  
+**Day 5–6**: Brain providers wiring; guarded endpoint.  
+**Day 7–8**: Reports PDF & artifacts end-to-end.  
+**Day 9–10**: UI decision + polish; CI pipeline.  
+**Buffer**: 2 days for docs and acceptance.
+
+## 8) Appendix A — Per-file review
+
+{per_file_table}
 
 ---
 
-## 0) Repository Hygiene (Safe)
-**Goals**: remove OS junk, add missing `__init__.py`, fix .gitignore.
-
-**Files to generate**:
-1. `patches/v2.0.0/scripts/cleanup_safe.sh` – deletes `__MACOSX/`, `.DS_Store`, `__pycache__/`, `*.pyc`, `.pytest_cache/`.
-2. `patches/v2.0.0/templates/gitignore.append` – add macOS/Python/Node/Docker ignores.
-3. `patches/v2.0.0/scripts/add_missing_inits.py` – scan python dirs with .py files and inject `__init__.py` where missing (no overwrite).
-
----
-
-## 1) Alembic / DB Migrations (Critical CI)
-**Findings**: Alembic folder or INI missing/invalid; formatter_generic missing.
-
-**Actions**:
-- If `orchestrator/alembic` is absent, **create** baseline Alembic structure under that path with env.py, versions/.
-- Provide `orchestrator/alembic.ini` containing `[formatter_generic]` and proper logging.
-- Ensure env loads `DATABASE_URL/DB_URL/DB_DSN`. Use `PYTHONPATH=/app` and `workdir=/app/orchestrator` in CI.
-
-**Files to generate**:
-1. `patches/v2.0.0/orchestrator/alembic.ini`
-2. `patches/v2.0.0/orchestrator/alembic/env.py`
-3. `patches/v2.0.0/orchestrator/alembic/versions/0001_init.py` – create core tables if missing (tenants, users, memberships, engagements, plans, runs, jobs, agents, run_events, artifacts).
-4. `patches/v2.0.0/.github/workflows/ci_migrate_step.md` – instructions to run alembic with proper env.
-
----
-
-## 2) OPA & Policies (Boot blocker)
-**Findings**: Compose references bad image tag; rego parse issues (`or` usage).
-
-**Actions**:
-- Add `infra/docker-compose.opa.compat.yml` overriding OPA image to `openpolicyagent/opa:0.65.0`.
-- Introduce `policies_enabled/` with minimal valid policy; mount that path in compose; disable legacy policies until fixed.
-- Provide `policies/policy.v3.rego` fixed version (no inline `or` in same rule body).
-
-**Files**:
-1. `patches/v2.0.0/infra/docker-compose.opa.compat.yml`
-2. `patches/v2.0.0/policies_enabled/policy.rego`
-3. `patches/v2.0.0/policies/policy.v3.rego` (fixed).
-
----
-
-## 3) Router Mount Completeness
-**Findings**: Some routers in `orchestrator/routers/` not included.
-
-**Actions**:
-- Generate `scripts/repair_bootstrap.py` to auto-append `include_router()` for any missing router.
-- Alternatively, produce a canonical `orchestrator/bootstrap_extras.py` that imports & mounts all routers (idempotent).
-
-**Files**:
-1. `patches/v2.0.0/scripts/repair_bootstrap.py`
-2. `patches/v2.0.0/orchestrator/bootstrap_extras.py` (full content).
-
----
-
-## 4) Brain (LLM Providers) – Implement & Guard
-**Findings**: Missing `__init__.py` in `orchestrator/brain` or providers; providers stubs.
-
-**Actions**:
-- Add `__init__.py` markers.
-- Implement provider stubs: `openai_chat.py`, `anthropic.py` with env-driven toggles; add `heuristic.py` as fallback.
-- Implement `autoplan` endpoint in `routers/v3_brain.py` that returns a plan from provider.
-
-**Files**:
-1. `patches/v2.0.0/orchestrator/brain/__init__.py`
-2. `patches/v2.0.0/orchestrator/brain/providers/__init__.py`
-3. `patches/v2.0.0/orchestrator/brain/providers/openai_chat.py`
-4. `patches/v2.0.0/orchestrator/brain/providers/anthropic.py`
-5. `patches/v2.0.0/orchestrator/brain/providers/heuristic.py`
-6. `patches/v2.0.0/orchestrator/routers/v3_brain.py`
-
----
-
-## 5) Artifacts & Findings
-**Actions**:
-- Add models and endpoints for findings: `GET/POST /v2/runs/{id}/findings`.
-- Implement artifact index: `GET /v2/runs/{id}/artifacts/index.json` listing artifacts (id,label,kind,filename).
-- Implement `GET /v2/artifacts/{id}/download` streaming file.
-
-**Files**:
-1. `patches/v2.0.0/orchestrator/routers/v2_findings.py`
-2. `patches/v2.0.0/orchestrator/routers/v2_artifacts.py`
-
----
-
-## 6) Reporting Service Wiring
-**Actions**:
-- Implement `services/reporter/app.py` render endpoint accepting JSON context and returning HTML/PDF (MVP can return HTML).
-- Add orchestrator client to call reporter at run completion and store report as artifact.
-
-**Files**:
-1. `patches/v2.0.0/services/reporter/app.py`
-2. `patches/v2.0.0/orchestrator/services/reporter_client.py`
-
----
-
-## 7) Agents Consistency & Safety
-**Actions**:
-- Merge redundant dev agents; standardize env (`ORCH_URL`, `TENANT_ID`, `AGENT_TOKEN`).
-- Enforce allowlist for remote/kali agent tools via `tools.yaml`. Add examples: `naabu_basic`, `masscan_safe`, `gobuster_dns_safe`, `ffuf_post_json`, `sqlmap_smart`.
-- Ensure timeouts and artifact uploads consistent.
-
-**Files**:
-1. `patches/v2.0.0/agents/kali_os_agent/tools.yaml`
-2. `patches/v2.0.0/agents/AGENT_README.md`
-
----
-
-## 8) UI Enhancements
-**Actions**:
-- Add Findings view: call `/v2/runs/{id}/findings` and render table; add “Download Report” button.
-- Add Approvals panel to approve pending runs.
-
-**Files**:
-1. `patches/v2.0.0/ui/src/pages/Findings.tsx`
-2. `patches/v2.0.0/ui/src/components/ReportButton.tsx`
-
----
-
-## 9) CI Scripts (Deterministic)
-**Actions**:
-- Build orchestrator, bring up db+opa with compat, run alembic with `PYTHONPATH=/app -w /app/orchestrator -c alembic.ini`, then up full stack, wait `/health`.
-- On failure, print logs.
-
-**Files**:
-1. `patches/v2.0.0/scripts/ci_migrate.sh`
-2. `patches/v2.0.0/scripts/ci_stack.sh`
-3. `patches/v2.0.0/scripts/wait_for_api.sh`
-4. `patches/v2.0.0/scripts/print_logs_on_fail.sh`
-5. `patches/v2.0.0/.github/workflows/ci.yml` (new or patched)
-
----
-
-## 10) Optional Advanced Features (Backlog)
-- Cloud audit agent (AWS ScoutSuite) with secure secrets handling.
-- Privilege escalation agent (LinPEAS/WinPEAS via SSH). 
-- Metasploit agent (msfrpcd) for verified exploitation (approval-gated).
-- Fuzzing jobs (ZAP fuzzer API; wfuzz templates).
-
-Document each as separate RFC markdown files in `docs/rfc/` with skeleton code stubs under `patches/`.
+_Authored automatically from repository contents; if anything looks off, it reflects the current files in the ZIP, not assumptions._
