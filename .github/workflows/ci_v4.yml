@@ -1,0 +1,41 @@
+name: CI v4
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Migrate DB first (db+opa up, wait, alembic upgrade)
+        run: bash scripts/ci_migrate_v154.sh
+
+      - name: Start full stack
+        run: bash scripts/ci_stack_up_v154.sh
+
+      - name: Wait for API
+        run: bash scripts/wait_for_api_v154.sh
+
+      - name: Install smoke deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install requests
+
+      - name: Smoke test (Python)
+        env:
+          API: http://localhost:8080
+          TENANT: t_demo
+        run: python scripts/ci_smoke.py
+
+      - name: Logs on failure
+        if: failure()
+        run: bash scripts/print_logs_on_fail_v154.sh

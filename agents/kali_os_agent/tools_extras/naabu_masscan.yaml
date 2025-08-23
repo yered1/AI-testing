@@ -1,0 +1,13 @@
+naabu_basic:
+  active: true
+  timeout: 600
+  cmd: 'naabu -host {{target}} -rate 2000 -p - -exclude-ports 25,53,123 -json -o naabu.json'
+  artifacts:
+    - 'naabu.json'
+
+masscan_safe:
+  active: true
+  timeout: 600
+  cmd: 'masscan {{cidr}} --rate 500 --banners -oJ masscan.json'
+  artifacts:
+    - 'masscan.json'
