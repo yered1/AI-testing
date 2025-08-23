@@ -1,0 +1,9 @@
+tools:
+  nmap_tcp_top_1000:
+    cmd: "nmap -Pn --top-ports 1000 -T3 {args}"
+  ffuf_dirb:
+    cmd: "ffuf -mc 200,302 -t 50 {args}"
+  sqlmap_basic:
+    cmd: "sqlmap --batch {args}"
+  gobuster_dir:
+    cmd: "gobuster dir {args}"

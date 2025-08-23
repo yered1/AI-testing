@@ -1,0 +1,4 @@
+
+services:
+  # reference only; enable specific ones as needed to avoid resource contention
+  # include files: agents for discovery, zap, nuclei, network, semgrep, mobile, kali remote
