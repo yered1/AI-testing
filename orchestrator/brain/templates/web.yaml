@@ -1,0 +1,13 @@
+defaults:
+  tests:
+    - web_httpx_probe
+    - web_zap_baseline
+    - web_nuclei_default
+params:
+  web_httpx_probe:
+    targets: "{{ scope.in_scope_domains | default([]) }}"
+  web_zap_baseline:
+    domains: "{{ scope.in_scope_domains | default([]) }}"
+    mode: "baseline"
+  web_nuclei_default:
+    targets: "{{ scope.in_scope_domains | default([]) }}"

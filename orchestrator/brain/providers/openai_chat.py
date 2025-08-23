@@ -1,76 +1,49 @@
-import os, json, time
+import os, json, re, requests
+from typing import Dict, Any
+from .base import BaseProvider
 
-from .base import Provider
+SYSTEM = "You are a senior penetration testing planner. Given scope and engagement type, output a minimal JSON with selected_tests and optional params. Prefer checks that match the scope. Keep it safe by default (baseline/passive)."
 
-class OpenAIChatProvider(Provider):
+PROMPT = '''Scope JSON:
+{scope}
+
+Engagement type: {etype}
+
+Return JSON only in this shape:
+{{
+  "selected_tests": ["test_id", ...],
+  "params": {{"test_id": {{...}} }}
+}}
+'''
+
+class OpenAIChatProvider(BaseProvider):
     name = "openai_chat"
-    def _client(self):
-        # Lazy dependency; use requests only if configured
+
+    def plan(self, scope: Dict[str, Any], engagement_type: str, preferences: Dict[str, Any]) -> Dict[str, Any]:
+        base = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+        model = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
         key = os.environ.get("OPENAI_API_KEY")
-        base = os.environ.get("OPENAI_BASE_URL","https://api.openai.com/v1")
-        model = os.environ.get("OPENAI_MODEL","gpt-4o-mini")
         if not key:
             raise RuntimeError("OPENAI_API_KEY not set")
-        import requests
-        return requests.Session(), base, model, key
-
-    def plan(self, engagement: dict, scope: dict, preferences: dict) -> dict:
-        try:
-            s, base, model, key = self._client()
-        except Exception as e:
-            # fallback to heuristic if not configured
-            from .heuristic import HeuristicProvider
-            return HeuristicProvider().plan(engagement, scope, preferences)
-        prompt = {
-            "role":"system",
-            "content":"You are a pentest planner. Propose safe plan steps using our test ids."
+        body = {
+            "model": model,
+            "messages":[
+                {"role":"system","content": SYSTEM},
+                {"role":"user","content": PROMPT.format(scope=json.dumps(scope, indent=2), etype=engagement_type)}
+            ],
+            "temperature": 0.2
         }
-        user = {
-            "role":"user",
-            "content": json.dumps({"engagement":engagement,"scope":scope,"preferences":preferences,
-                                   "available_tests":[
-                                       "web_httpx_probe","web_zap_baseline","web_nuclei_default",
-                                       "network_dnsx_resolve","network_nmap_tcp_top_1000",
-                                       "web_owasp_top10_core","network_discovery_ping_sweep"
-                                   ]})
-        }
-        try:
-            r = s.post(f"{base}/chat/completions",
-                       headers={"Authorization": f"Bearer {key}","Content-Type":"application/json"},
-                       json={"model": model, "messages":[prompt,user],
-                             "temperature":0.1, "response_format":{"type":"json_object"}},
-                       timeout=60)
-            r.raise_for_status()
-            data = r.json()
-            txt = data.get("choices",[{}])[0].get("message",{}).get("content","{}")
-            plan = json.loads(txt)
-            if "selected_tests" in plan:
-                return plan
-        except Exception:
-            pass
-        from .heuristic import HeuristicProvider
-        return HeuristicProvider().plan(engagement, scope, preferences)
-
-    def enrich(self, engagement: dict, selected_tests: list, scope: dict) -> dict:
-        try:
-            s, base, model, key = self._client()
-        except Exception:
-            from .heuristic import HeuristicProvider
-            return HeuristicProvider().enrich(engagement, selected_tests, scope)
-        user = {"role":"user","content": json.dumps({"engagement":engagement,"scope":scope,"selected_tests":selected_tests})}
-        try:
-            r = s.post(f"{base}/chat/completions",
-                       headers={"Authorization": f"Bearer {key}","Content-Type":"application/json"},
-                       json={"model": model, "messages":[{"role":"system","content":"Enrich params per step; reply JSON."}, user],
-                             "temperature":0.1, "response_format":{"type":"json_object"}},
-                       timeout=60)
-            r.raise_for_status()
-            data = r.json()
-            txt = data.get("choices",[{}])[0].get("message",{}).get("content","{}")
-            resp = json.loads(txt)
-            if "selected_tests" in resp:
-                return resp
-        except Exception:
-            pass
-        from .heuristic import HeuristicProvider
-        return HeuristicProvider().enrich(engagement, selected_tests, scope)
+        r = requests.post(f"{base}/chat/completions", headers={
+            "Authorization": f"Bearer {key}", "Content-Type":"application/json"
+        }, json=body, timeout=60)
+        r.raise_for_status()
+        data = r.json()
+        txt = data["choices"][0]["message"]["content"]
+        # Extract JSON block
+        m = re.search(r'\{[\s\S]*\}', txt)
+        if not m:
+            raise RuntimeError("no JSON in LLM output")
+        plan = json.loads(m.group(0))
+        plan.setdefault("params", {})
+        plan.setdefault("selected_tests", [])
+        return {"selected_tests": plan["selected_tests"], "params": plan["params"], "explanation": "openai_chat plan"}

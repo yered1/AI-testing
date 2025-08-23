@@ -1,0 +1,18 @@
+{
+  "id": "network_nmap_udp_top_200",
+  "title": "Network \u2014 Nmap UDP Top 200",
+  "category": "network",
+  "description": "UDP top 200 ports (intrusive).",
+  "tool_adapter": "network_nmap_udp_top_200",
+  "params_schema": {
+    "type": "object",
+    "properties": {
+      "cidrs": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

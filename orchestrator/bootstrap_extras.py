@@ -35,3 +35,7 @@ app.include_router(v2_reports_enhanced.router, tags=["reports"])
 # v1.2.0 brain v3 router
 from .routers import v3_brain
 app.include_router(v3_brain.router, tags=["brain-v3"])
+from orchestrator.routers.v3_brain_guarded import router as router_brain_guarded
+app.include_router(router_brain_guarded)
+from orchestrator.routers.ui_brain import router as router_ui_brain
+app.include_router(router_ui_brain)

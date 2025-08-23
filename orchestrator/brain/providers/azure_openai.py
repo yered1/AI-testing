@@ -1,34 +1,33 @@
-import os, json
-from .base import Provider
+import os, json, re, requests
+from typing import Dict, Any
+from .base import BaseProvider
 
-class AzureOpenAIProvider(Provider):
+class AzureOpenAIProvider(BaseProvider):
     name = "azure_openai"
-    def plan(self, engagement, scope, preferences):
-        if not os.environ.get("AZURE_OPENAI_KEY"):
-            from .heuristic import HeuristicProvider
-            return HeuristicProvider().plan(engagement, scope, preferences)
-        try:
-            import requests
-            endpoint = os.environ["AZURE_OPENAI_ENDPOINT"].rstrip("/")
-            dep = os.environ.get("AZURE_OPENAI_DEPLOYMENT","gpt-4o-mini")
-            api = f"{endpoint}/openai/deployments/{dep}/chat/completions?api-version=2024-02-15-preview"
-            r = requests.post(api,
-                              headers={"api-key": os.environ["AZURE_OPENAI_KEY"], "Content-Type":"application/json"},
-                              json={"messages":[{"role":"system","content":"Pentest planner; JSON only."},
-                                                {"role":"user","content":json.dumps({"engagement":engagement,"scope":scope,"preferences":preferences})}],
-                                    "temperature":0.1, "response_format":{"type":"json_object"}},
-                              timeout=60)
-            r.raise_for_status()
-            data = r.json()
-            txt = data.get("choices",[{}])[0].get("message",{}).get("content","{}")
-            plan = json.loads(txt)
-            if "selected_tests" in plan:
-                return plan
-        except Exception:
-            pass
-        from .heuristic import HeuristicProvider
-        return HeuristicProvider().plan(engagement, scope, preferences)
 
-    def enrich(self, engagement, selected_tests, scope):
-        from .heuristic import HeuristicProvider
-        return HeuristicProvider().enrich(engagement, selected_tests, scope)
+    def plan(self, scope: Dict[str, Any], engagement_type: str, preferences: Dict[str, Any]) -> Dict[str, Any]:
+        key = os.environ.get("AZURE_OPENAI_KEY")
+        endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT","").rstrip("/")
+        deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT")
+        if not (key and endpoint and deployment):
+            raise RuntimeError("AZURE_OPENAI_* envs not set")
+        body = {
+            "messages":[
+                {"role":"system","content": "You are a senior pentest planner. Output JSON only."},
+                {"role":"user","content": f"Scope:\n{json.dumps(scope)}\nEngagement type: {engagement_type}\nReturn JSON { '{"selected_tests":[],"params":{}}' }"}
+            ],
+            "temperature": 0.2
+        }
+        r = requests.post(f"{endpoint}/openai/deployments/{deployment}/chat/completions?api-version=2024-02-15-preview",
+                          headers={"api-key": key, "content-type":"application/json"},
+                          json=body, timeout=60)
+        r.raise_for_status()
+        data = r.json()
+        txt = data["choices"][0]["message"]["content"]
+        m = re.search(r'\{[\s\S]*\}', txt)
+        if not m:
+            raise RuntimeError("no JSON in LLM output")
+        plan = json.loads(m.group(0))
+        plan.setdefault("params", {})
+        plan.setdefault("selected_tests", [])
+        return {"selected_tests": plan["selected_tests"], "params": plan["params"], "explanation": "azure_openai plan"}

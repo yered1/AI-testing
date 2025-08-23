@@ -1,0 +1,37 @@
+{
+  "id": "web_zap_auth_full",
+  "title": "Web \u2014 ZAP Authenticated Full Scan",
+  "category": "web",
+  "description": "Authenticated active scan via ZAP (intrusive). Requires credentials and approval.",
+  "tool_adapter": "web_zap_auth_full",
+  "params_schema": {
+    "type": "object",
+    "properties": {
+      "target": {
+        "type": "string"
+      },
+      "login_url": {
+        "type": "string"
+      },
+      "username": {
+        "type": "string"
+      },
+      "password": {
+        "type": "string"
+      },
+      "user_field": {
+        "type": "string",
+        "default": "username"
+      },
+      "pass_field": {
+        "type": "string",
+        "default": "password"
+      }
+    },
+    "required": [
+      "target",
+      "username",
+      "password"
+    ]
+  }
+}

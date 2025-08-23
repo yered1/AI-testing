@@ -1,46 +1,76 @@
-from .base import Provider
+from typing import Dict, Any, List
+from .base import BaseProvider
 
-class HeuristicProvider(Provider):
+WEB_DEFAULT = [ "web_httpx_probe", "web_zap_baseline", "web_nuclei_default" ]
+NETWORK_INTERNAL = [ "network_discovery_ping_sweep", "network_nmap_tcp_full", "network_nmap_udp_top_200" ]
+NETWORK_EXTERNAL = [ "network_discovery_ping_sweep", "network_nmap_tcp_top_1000" ]
+CODE_DEFAULT = [ "code_semgrep_default" ]
+MOBILE_DEFAULT = [ "mobile_apk_static_default" ]
+
+class HeuristicProvider(BaseProvider):
     name = "heuristic"
-    def plan(self, engagement: dict, scope: dict, preferences: dict) -> dict:
-        t = (engagement.get("type") or "").lower()
-        risk = (preferences or {}).get("risk_tier","safe_active")
-        sel = []
-        # web modalities
-        if t in ("web","webapp") or scope.get("in_scope_domains"):
-            sel += ["web_httpx_probe","web_zap_baseline","web_nuclei_default"]
-        # network modalities
-        if t in ("network","external","internal") or scope.get("in_scope_cidrs"):
-            sel += ["network_dnsx_resolve","network_nmap_tcp_top_1000"]
-        # mobile / code left to existing flows
-        dedup = []
-        for s in sel:
-            if s not in dedup:
-                dedup.append(s)
-        return {"selected_tests": [{"id": s, "params": {}} for s in dedup],
-                "explanation": f"Heuristic selection by type={t}, risk={risk} using domain/CIDR presence."}
-    
-    def enrich(self, engagement: dict, selected_tests: list, scope: dict) -> dict:
-        out = []
-        domains = scope.get("in_scope_domains") or []
-        cidrs = scope.get("in_scope_cidrs") or []
-        for step in selected_tests or []:
-            sid = step.get("id")
-            params = dict(step.get("params") or {})
-            if sid == "web_httpx_probe":
-                if domains and not params.get("targets"):
-                    params["targets"] = [d if d.startswith("http") else f"https://{d}" for d in domains]
-            if sid == "network_dnsx_resolve":
-                if domains and not params.get("domains"):
-                    params["domains"] = domains
-            if sid == "network_nmap_tcp_top_1000":
-                if cidrs and not params.get("targets"):
-                    params["targets"] = cidrs
-            if sid == "web_zap_baseline":
-                if domains and not params.get("domains"):
-                    params["domains"] = domains
-            if sid == "web_nuclei_default":
-                if domains and not params.get("targets"):
-                    params["targets"] = domains
-            out.append({"id": sid, "params": params})
-        return {"selected_tests": out, "notes": "Filled params from engagement scope where applicable."}
+
+    def plan(self, scope: Dict[str, Any], engagement_type: str, preferences: Dict[str, Any]) -> Dict[str, Any]:
+        tests: List[str] = []
+        params: Dict[str, Any] = {}
+        et = (engagement_type or scope.get("type") or "").lower()
+        domains = scope.get("in_scope_domains") or scope.get("domains") or []
+        cidrs = scope.get("in_scope_cidrs") or scope.get("cidrs") or []
+        code = scope.get("code") or {}
+        mobile = scope.get("mobile") or {}
+        packs = (preferences or {}).get("packs") or []
+
+        def add_tests(ts):
+            for t in ts:
+                if t not in tests:
+                    tests.append(t)
+
+        if et in ("web","webapp"):
+            add_tests(WEB_DEFAULT)
+        if et in ("network","internal"):
+            add_tests(NETWORK_INTERNAL if cidrs else NETWORK_EXTERNAL)
+        if et in ("external","internet"):
+            add_tests(NETWORK_EXTERNAL)
+        if et in ("code","sast") or code:
+            add_tests(CODE_DEFAULT)
+        if et in ("mobile","apk") or mobile:
+            add_tests(MOBILE_DEFAULT)
+        # Packs
+        for p in packs:
+            if p == "default_web_active":
+                add_tests(["web_zap_baseline","web_nuclei_default"])
+            if p == "default_internal_network":
+                add_tests(["network_discovery_ping_sweep","network_nmap_tcp_full","network_nmap_udp_top_200"])
+            if p == "default_external_min":
+                add_tests(["network_discovery_ping_sweep","web_httpx_probe","web_zap_baseline","web_nuclei_default"])
+            if p == "default_code_review":
+                add_tests(["code_semgrep_default"])
+            if p == "default_mobile_static":
+                add_tests(["mobile_apk_static_default"])
+
+        explanation = f"Heuristic plan for {et}: {', '.join(tests)}"
+        return {"selected_tests": tests, "params": params, "explanation": explanation}
+
+    def enrich(self, scope: Dict[str, Any], plan: Dict[str, Any]) -> Dict[str, Any]:
+        # Best-effort param fill-ins from scope (simple mapping)
+        params = plan.get("params") or {}
+        domains = scope.get("in_scope_domains") or scope.get("domains") or []
+        cidrs = scope.get("in_scope_cidrs") or scope.get("cidrs") or []
+        if "web_httpx_probe" in plan.get("selected_tests", []):
+            params.setdefault("web_httpx_probe", {"targets": domains})
+        if "web_zap_baseline" in plan.get("selected_tests", []):
+            params.setdefault("web_zap_baseline", {"domains": domains, "mode": "baseline"})
+        if "web_nuclei_default" in plan.get("selected_tests", []):
+            params.setdefault("web_nuclei_default", {"targets": domains})
+        if "network_discovery_ping_sweep" in plan.get("selected_tests", []):
+            params.setdefault("network_discovery_ping_sweep", {"cidrs": cidrs})
+        if "network_nmap_tcp_full" in plan.get("selected_tests", []):
+            params.setdefault("network_nmap_tcp_full", {"cidrs": cidrs})
+        if "network_nmap_udp_top_200" in plan.get("selected_tests", []):
+            params.setdefault("network_nmap_udp_top_200", {"cidrs": cidrs})
+        if "code_semgrep_default" in plan.get("selected_tests", []):
+            params.setdefault("code_semgrep_default", {"config": "p/ci"})
+        if "mobile_apk_static_default" in plan.get("selected_tests", []):
+            params.setdefault("mobile_apk_static_default", {"artifact_label": "mobile_apk"})
+        plan["params"] = params
+        return plan

@@ -1,0 +1,13 @@
+services:
+  agent_network:
+    build:
+      context: ../
+      dockerfile: infra/agent.network.Dockerfile
+    environment:
+      - ORCH_URL=http://orchestrator:8080
+      - TENANT_ID=t_demo
+      - AGENT_NAME=net1
+      - AGENT_TOKEN=${AGENT_TOKEN:-}
+      - ALLOW_ACTIVE_SCAN=${ALLOW_ACTIVE_SCAN:-0}
+    depends_on:
+      - orchestrator

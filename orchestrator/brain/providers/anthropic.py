@@ -1,34 +1,29 @@
-import os, json
-from .base import Provider
+import os, json, re, requests
+from typing import Dict, Any
+from .base import BaseProvider
 
-class AnthropicProvider(Provider):
+# Minimal Anthropic client via HTTP
+class AnthropicProvider(BaseProvider):
     name = "anthropic"
-    def plan(self, engagement, scope, preferences):
-        # Lazy import only if configured
-        if not os.environ.get("ANTHROPIC_API_KEY"):
-            from .heuristic import HeuristicProvider
-            return HeuristicProvider().plan(engagement, scope, preferences)
-        try:
-            import requests
-            base = os.environ.get("ANTHROPIC_BASE_URL","https://api.anthropic.com/v1")
-            key = os.environ["ANTHROPIC_API_KEY"]
-            r = requests.post(f"{base}/messages",
-                              headers={"x-api-key": key, "anthropic-version":"2023-06-01","Content-Type":"application/json"},
-                              json={"model": os.environ.get("ANTHROPIC_MODEL","claude-3-5-sonnet-20240620"),
-                                    "system":"You are a pentest planner; emit JSON with selected_tests[].",
-                                    "messages":[{"role":"user","content":json.dumps({"engagement":engagement,"scope":scope,"preferences":preferences})}]},
-                              timeout=60)
-            r.raise_for_status()
-            data = r.json()
-            content = (data.get("content") or [{}])[0].get("text","{}")
-            plan = json.loads(content)
-            if "selected_tests" in plan:
-                return plan
-        except Exception:
-            pass
-        from .heuristic import HeuristicProvider
-        return HeuristicProvider().plan(engagement, scope, preferences)
 
-    def enrich(self, engagement, selected_tests, scope):
-        from .heuristic import HeuristicProvider
-        return HeuristicProvider().enrich(engagement, selected_tests, scope)
+    def plan(self, scope: Dict[str, Any], engagement_type: str, preferences: Dict[str, Any]) -> Dict[str, Any]:
+        key = os.environ.get("ANTHROPIC_API_KEY")
+        model = os.environ.get("ANTHROPIC_MODEL", "claude-3-5-sonnet-20240620")
+        if not key:
+            raise RuntimeError("ANTHROPIC_API_KEY not set")
+        sys_prompt = "You are a senior penetration testing planner producing JSON only."
+        user = f"Scope JSON:\n{json.dumps(scope)}\nEngagement type: {engagement_type}\nReturn JSON {{\"selected_tests\":[],\"params\":{{}}}} only."
+        r = requests.post("https://api.anthropic.com/v1/messages",
+                          headers={"x-api-key": key, "anthropic-version":"2023-06-01", "content-type":"application/json"},
+                          json={"model": model, "max_tokens": 700, "system": sys_prompt, "messages":[{"role":"user","content": user}]},
+                          timeout=60)
+        r.raise_for_status()
+        out = r.json()
+        txt = "".join([b.get("text","") for b in out["content"] if b.get("type")=="text"])
+        m = re.search(r'\{[\s\S]*\}', txt)
+        if not m:
+            raise RuntimeError("no JSON in LLM output")
+        plan = json.loads(m.group(0))
+        plan.setdefault("params", {})
+        plan.setdefault("selected_tests", [])
+        return {"selected_tests": plan["selected_tests"], "params": plan["params"], "explanation": "anthropic plan"}

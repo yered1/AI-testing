@@ -1,0 +1,6 @@
+defaults:
+  tests:
+    - mobile_apk_static_default
+params:
+  mobile_apk_static_default:
+    artifact_label: "mobile_apk"

@@ -1,34 +1,14 @@
-import os, importlib
+from abc import ABC, abstractmethod
+from typing import Dict, Any
 
-class Provider:
+class BaseProvider(ABC):
     name = "base"
-    def plan(self, engagement: dict, scope: dict, preferences: dict) -> dict:
-        raise NotImplementedError
-    def enrich(self, engagement: dict, selected_tests: list, scope: dict) -> dict:
-        # Optionally fill params per test
-        return {"selected_tests": selected_tests, "notes": "no enrichment"}
 
-def list_providers():
-    return ["heuristic","openai_chat","anthropic","azure_openai"]
+    @abstractmethod
+    def plan(self, scope: Dict[str, Any], engagement_type: str, preferences: Dict[str, Any]) -> Dict[str, Any]:
+        """Return {selected_tests: [ids], params: {test_id: {}}, explanation: str} """
+        ...
 
-def load_provider(name: str) -> Provider:
-    name = (name or os.environ.get("BRAIN_PROVIDER","heuristic")).lower()
-    if name == "heuristic":
-        from .heuristic import HeuristicProvider
-        return HeuristicProvider()
-    try:
-        if name == "openai_chat":
-            mod = importlib.import_module("orchestrator.brain.providers.openai_chat")
-            return mod.OpenAIChatProvider()
-        if name == "anthropic":
-            mod = importlib.import_module("orchestrator.brain.providers.anthropic")
-            return mod.AnthropicProvider()
-        if name == "azure_openai":
-            mod = importlib.import_module("orchestrator.brain.providers.azure_openai")
-            return mod.AzureOpenAIProvider()
-    except Exception as e:
-        # Fallback
-        from .heuristic import HeuristicProvider
-        return HeuristicProvider()
-    from .heuristic import HeuristicProvider
-    return HeuristicProvider()
+    def enrich(self, scope: Dict[str, Any], plan: Dict[str, Any]) -> Dict[str, Any]:
+        """Optionally add params based on scope; default is passthrough"""
+        return plan

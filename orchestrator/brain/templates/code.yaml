@@ -1,0 +1,6 @@
+defaults:
+  tests:
+    - code_semgrep_default
+params:
+  code_semgrep_default:
+    config: "p/ci"
