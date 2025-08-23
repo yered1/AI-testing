@@ -1,5 +1,0 @@
-CI hints:
-- ModuleNotFoundError: 'orchestrator' during Alembic -> set PYTHONPATH=/app and run in -w /app; use -c orchestrator/alembic.ini
-- Ensure migration uses --no-deps so it doesn't pull opa/db again
-- Always include OPA compat override on compose commands
-- Provide DB env override so orchestrator and alembic use same credentials

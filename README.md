@@ -1,225 +1,333 @@
 # AI-Testing Platform
 
-A comprehensive automated security testing orchestration platform that manages distributed security testing agents for web applications, APIs, mobile apps, and infrastructure.
+Modern, distributed security testing orchestration platform with AI-powered test planning and multi-agent architecture.
 
 ## 🚀 Features
 
-- **Multi-Agent Architecture**: Distributed testing with specialized agents (ZAP, Nuclei, Semgrep, Nmap, Kali tools)
-- **AI-Powered Planning**: Intelligent test plan generation using OpenAI/Anthropic
-- **Comprehensive Coverage**: Web, API, mobile, network, and code security testing
-- **Enterprise Ready**: RBAC, multi-tenancy, audit logging
-- **Real-time Monitoring**: Live test execution tracking and reporting
+- **Distributed Testing**: Multiple specialized security testing agents
+- **AI Planning**: Intelligent test plan generation with OpenAI/Anthropic
+- **Comprehensive Coverage**: Web, API, mobile, network, and code testing
+- **Enterprise Ready**: Multi-tenancy, RBAC, audit logging
+- **Real-time Monitoring**: Live execution tracking via SSE/WebSocket
 
-## 📋 Prerequisites
+## 📋 Requirements
 
 - Docker & Docker Compose v2
-- Python 3.9+
+- Python 3.9+ 
 - 8GB RAM minimum
 - Linux/macOS (Windows WSL2 supported)
 
-## 🔧 Quick Start
+## ⚡ Quick Start
 
-### 1. Clone and Setup
+### 1. Clone Repository
 ```bash
 git clone https://github.com/yered1/AI-testing.git
 cd AI-testing
-cp .env.example .env
 ```
 
 ### 2. Configure Environment
-Edit `.env` and set:
-- `SECRET_KEY` - Generate a secure random string
-- `DB_PASSWORD` - Change from default
-- AI provider keys (optional): `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`
+```bash
+cp .env.example .env
+# Edit .env and set:
+# - SECRET_KEY (use: openssl rand -hex 32)
+# - DB_PASSWORD (strong password)
+# - AI keys (optional)
+```
 
 ### 3. Start Platform
 ```bash
-# Start all services and initialize
+# Start all services
 ./scripts/manage.sh full-start
 
 # Verify health
 ./scripts/manage.sh status
 ```
 
-### 4. Access Platform
-- API: http://localhost:8080
-- UI: http://localhost:8080/ui
-- Health: http://localhost:8080/health
+### 4. Access Services
+- **API**: http://localhost:8080
+- **API Docs**: http://localhost:8080/docs
+- **Health**: http://localhost:8080/health
 
-## 📚 Documentation
+## 🧪 Run Your First Test
 
-- [Architecture Overview](docs/ARCHITECTURE.md)
-- [API Documentation](docs/API.md)
-- [Agent Development](docs/AGENTS.md)
-- [Deployment Guide](docs/DEPLOYMENT.md)
-- [Security Guidelines](docs/SECURITY.md)
+### Using API
+```bash
+# 1. Create engagement
+ENGAGEMENT_ID=$(curl -s -X POST http://localhost:8080/api/v2/engagements \
+  -H "Content-Type: application/json" \
+  -H "X-Tenant-Id: default" \
+  -d '{
+    "name": "Test Scan",
+    "type": "web_application", 
+    "scope": {
+      "targets": ["http://testphp.vulnweb.com"],
+      "exclude": []
+    }
+  }' | jq -r .id)
+
+# 2. Create test plan
+PLAN_ID=$(curl -s -X POST http://localhost:8080/api/v2/engagements/$ENGAGEMENT_ID/plans \
+  -H "Content-Type: application/json" \
+  -H "X-Tenant-Id: default" \
+  -d '{
+    "name": "Basic Web Scan",
+    "tests": ["web_discovery", "web_vulnerabilities"]
+  }' | jq -r .id)
+
+# 3. Execute plan
+RUN_ID=$(curl -s -X POST http://localhost:8080/api/v2/plans/$PLAN_ID/runs \
+  -H "Content-Type: application/json" \
+  -H "X-Tenant-Id: default" \
+  -d '{}' | jq -r .id)
+
+# 4. Check status
+curl -s http://localhost:8080/api/v2/runs/$RUN_ID | jq .status
+```
+
+### Using Python Client
+```python
+from ai_testing_client import AITestingClient
+
+client = AITestingClient("http://localhost:8080")
+
+# Create and run test
+engagement = client.create_engagement(
+    name="API Security Test",
+    type="api",
+    targets=["https://api.example.com"]
+)
+
+plan = client.create_plan(
+    engagement_id=engagement.id,
+    tests=["api_fuzzing", "auth_bypass"]
+)
+
+run = client.execute_plan(plan.id)
+print(f"Test running: {run.id}")
+
+# Monitor progress
+for event in client.stream_events(run.id):
+    print(f"{event.type}: {event.message}")
+```
+
+## 🤖 Security Testing Agents
+
+| Agent | Purpose | Capabilities |
+|-------|---------|-------------|
+| **ZAP** | Web Application Security | OWASP Top 10, Ajax crawling, Active/Passive scanning |
+| **Nuclei** | Vulnerability Detection | CVE detection, Custom templates, Fast scanning |
+| **Semgrep** | Static Code Analysis | SAST, Secret detection, Custom rules |
+| **Nmap** | Network Discovery | Port scanning, Service detection, OS fingerprinting |
+| **SQLMap** | SQL Injection | Database enumeration, Data extraction, WAF bypass |
+| **Mobile** | Mobile App Testing | APK/IPA analysis, API testing, Certificate pinning |
 
 ## 🛠 Management Commands
 
 ```bash
-# Service Management
-./scripts/manage.sh up          # Start services
-./scripts/manage.sh down        # Stop services
-./scripts/manage.sh restart     # Restart services
-./scripts/manage.sh logs        # View logs
-./scripts/manage.sh status      # Check status
+# Service Control
+./scripts/manage.sh up              # Start services
+./scripts/manage.sh down            # Stop services
+./scripts/manage.sh restart         # Restart all
+./scripts/manage.sh status          # Check health
+./scripts/manage.sh logs [service]  # View logs
 
 # Database
-./scripts/manage.sh migrate     # Run migrations
-./scripts/manage.sh db-shell    # PostgreSQL shell
+./scripts/manage.sh migrate         # Run migrations
+./scripts/manage.sh db-shell        # PostgreSQL CLI
+./scripts/manage.sh db-backup       # Create backup
 
 # Testing
-./scripts/manage.sh test        # Run tests
-./scripts/manage.sh test-api    # Quick health check
+./scripts/manage.sh test            # Run test suite
+./scripts/manage.sh test-api        # API smoke test
 
 # Agents
 ./scripts/manage.sh agent-token [name]  # Generate token
+./scripts/manage.sh agents-start        # Start all agents
+./scripts/manage.sh agent-status        # Check agents
 
 # Development
-./scripts/manage.sh shell       # Orchestrator shell
-./scripts/manage.sh clean       # Clean temp files
+./scripts/manage.sh shell           # Python shell
+./scripts/manage.sh clean           # Clean temp files
 ```
 
-## 🧪 Running a Security Test
+## 📊 Architecture
 
-### Via API
+```mermaid
+graph TB
+    subgraph "Client Layer"
+        UI[Web UI]
+        CLI[CLI Tool]
+        API[REST API]
+    end
+    
+    subgraph "Core Services"
+        ORC[Orchestrator]
+        QUEUE[Job Queue]
+        DB[(PostgreSQL)]
+        CACHE[(Redis)]
+    end
+    
+    subgraph "Security Agents"
+        ZAP[ZAP Agent]
+        NUC[Nuclei Agent]
+        SEM[Semgrep Agent]
+        NMAP[Nmap Agent]
+    end
+    
+    UI --> ORC
+    CLI --> ORC
+    API --> ORC
+    ORC --> QUEUE
+    ORC --> DB
+    ORC --> CACHE
+    QUEUE --> ZAP
+    QUEUE --> NUC
+    QUEUE --> SEM
+    QUEUE --> NMAP
+```
+
+## 🔧 Configuration
+
+### Environment Variables
+Key configuration in `.env`:
 ```bash
-# 1. Create engagement
-curl -X POST http://localhost:8080/v2/engagements \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Test Scan",
-    "type": "web_application",
-    "scope": {"targets": ["http://example.com"]}
-  }'
+# Security
+SECRET_KEY=<random-32-char-hex>
+ALLOW_ACTIVE_SCAN=false  # Never true without authorization
 
-# 2. Create and run plan
-# See API documentation for details
+# Database
+DB_PASSWORD=<strong-password>
+
+# AI Providers (optional)
+OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
+
+# Features
+ENABLE_AI_PLANNING=true
+ENABLE_AUTO_REMEDIATION=false
 ```
 
-### Via UI
-1. Navigate to http://localhost:8080/ui/builder
-2. Create engagement
-3. Select tests
-4. Run and monitor
+### Docker Profiles
+```bash
+# Default: Core services only
+docker compose up
 
-## 🤖 Available Agents
+# Full: All services including agents
+docker compose --profile full up
 
-| Agent | Purpose | Status |
-|-------|---------|--------|
-| ZAP | Web app scanning | ✅ Ready |
-| Nuclei | Vulnerability detection | ✅ Ready |
-| Semgrep | Code analysis | ✅ Ready |
-| Nmap | Network scanning | ✅ Ready |
-| Mobile APK | Android analysis | ✅ Ready |
-| Kali Remote | Advanced tools | ✅ Ready |
-
-## 🏗 Architecture
-
-```
-┌─────────────┐     ┌──────────────┐     ┌─────────────┐
-│     UI      │────▶│ Orchestrator │────▶│   Agents    │
-└─────────────┘     └──────────────┘     └─────────────┘
-                           │                     │
-                           ▼                     ▼
-                    ┌──────────────┐     ┌─────────────┐
-                    │   Database   │     │   Reports   │
-                    └──────────────┘     └─────────────┘
+# Dev: Development mode with hot reload
+docker compose --profile dev up
 ```
 
-## 🔒 Security
+## 📚 API Documentation
 
-⚠️ **Important Security Notes:**
-- **NEVER** set `ALLOW_ACTIVE_SCAN=1` without proper authorization
-- Use strong passwords and rotate tokens regularly
-- Enable TLS in production
-- Review security policies before deployment
-- Implement network segmentation for agents
+Interactive API docs available at http://localhost:8080/docs
+
+### Key Endpoints
+- `POST /api/v2/engagements` - Create test engagement
+- `GET /api/v2/engagements/{id}` - Get engagement details
+- `POST /api/v2/plans` - Create test plan
+- `POST /api/v2/runs` - Execute test
+- `GET /api/v2/runs/{id}/results` - Get results
+- `GET /api/v2/reports/{id}` - Generate report
+
+## 🔒 Security Considerations
+
+- **Authentication**: JWT tokens with refresh mechanism
+- **Authorization**: Role-based access control (Admin, User, Viewer)
+- **Data Protection**: Encryption at rest and in transit
+- **Audit Logging**: All actions logged with user attribution
+- **Input Validation**: Strict validation on all inputs
+- **Rate Limiting**: API rate limits per user/tenant
+
+⚠️ **Important**: 
+- Never enable `ALLOW_ACTIVE_SCAN` without written authorization
+- Rotate secrets and tokens regularly
+- Use TLS in production
+- Implement network segmentation
 
 ## 🐛 Troubleshooting
 
-### Services won't start
+### Common Issues
+
+**Services won't start**
 ```bash
 # Check Docker
-docker info
-./scripts/manage.sh status
+docker version
+docker compose version
 
 # Check ports
-sudo lsof -i :8080
-sudo lsof -i :5432
-```
+sudo lsof -i :8080  # API
+sudo lsof -i :5432  # PostgreSQL
+sudo lsof -i :6379  # Redis
 
-### Database issues
-```bash
-# Reset database (DELETES DATA)
+# Reset if needed
 ./scripts/manage.sh full-reset
 ```
 
-### View logs
+**Database connection errors**
 ```bash
-./scripts/manage.sh logs orchestrator
-./scripts/manage.sh logs db
+# Check PostgreSQL
+./scripts/manage.sh db-shell
+\l  # List databases
+\q  # Quit
+
+# Recreate database
+./scripts/manage.sh down -v
+./scripts/manage.sh full-start
 ```
 
-## 📦 Development
-
-### Project Structure
-```
-ai-testing/
-├── orchestrator/     # Core API service
-├── agents/          # Testing agents
-├── ui/              # Web interface
-├── infra/           # Infrastructure configs
-├── scripts/         # Management scripts
-├── policies/        # OPA policies
-└── docs/           # Documentation
-```
-
-### Adding New Agents
-See [Agent Development Guide](docs/AGENTS.md)
-
-### Running Tests
+**Agent connection issues**
 ```bash
-pytest tests/unit
-pytest tests/integration
-./scripts/manage.sh test
+# Check agent status
+./scripts/manage.sh agent-status
+
+# View agent logs
+docker logs ai_testing_zap_agent
+
+# Regenerate token
+./scripts/manage.sh agent-token zap
 ```
 
-## 🚢 Deployment
+## 🚀 Production Deployment
 
-### Docker Compose (Development)
+### Using Docker Swarm
 ```bash
-docker compose -f infra/docker-compose.yml up -d
+docker swarm init
+docker stack deploy -c docker-compose.prod.yml ai_testing
 ```
 
-### Kubernetes (Production)
+### Using Kubernetes
 ```bash
-kubectl apply -f infra/kubernetes/
+kubectl create namespace ai-testing
+kubectl apply -f k8s/
 ```
 
-### Cloud Deployment
-- AWS: Use ECS or EKS
-- GCP: Use Cloud Run or GKE
-- Azure: Use Container Instances or AKS
-
-See [Deployment Guide](docs/DEPLOYMENT.md) for details.
-
-## 📄 License
-
-[Specify your license]
+### Cloud Providers
+- **AWS**: ECS with Fargate or EKS
+- **GCP**: Cloud Run or GKE  
+- **Azure**: Container Instances or AKS
 
 ## 🤝 Contributing
 
+We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md)
+
 1. Fork the repository
-2. Create feature branch (`git checkout -b feature/amazing`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing`)
-5. Open Pull Request
+2. Create feature branch
+3. Commit changes
+4. Push to branch
+5. Open pull request
+
+## 📄 License
+
+MIT License - See [LICENSE](LICENSE)
 
 ## 📞 Support
 
-- Issues: https://github.com/yered1/AI-testing/issues
-- Documentation: [docs/](docs/)
+- **Issues**: [GitHub Issues](https://github.com/yered1/AI-testing/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/yered1/AI-testing/discussions)
+- **Security**: Report vulnerabilities to security@ai-testing.io
 
 ---
-Built with ❤️ for the security community
+
+Built with ❤️ by the security community

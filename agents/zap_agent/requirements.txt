@@ -1,0 +1,10 @@
+# ============================================
+# agents/zap_agent/requirements.txt
+"""Python requirements for ZAP agent"""
+
+requirements = """requests==2.31.0
+"""
+
+if __name__ == "__main__":
+    agent = ZAPAgent()
+    agent.run()
