@@ -1,12 +1,7 @@
 services:
   db:
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-postgres}"]
-      interval: 5s
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-aitest} -h 127.0.0.1"]
+      interval: 3s
       timeout: 3s
-      retries: 20
-      start_period: 5s
-  orchestrator:
-    depends_on:
-      db:
-        condition: service_healthy
+      retries: 25

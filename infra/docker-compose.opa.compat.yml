@@ -1,3 +1,6 @@
 services:
   opa:
     image: ${OPA_IMAGE:-openpolicyagent/opa:0.65.0}
+    volumes:
+      - ./policies_enabled:/policies:ro
+    command: ["run","--server","--addr=:8181","/policies"]
