@@ -75,7 +75,9 @@ def downgrade():
     for tbl in ["job_events","jobs","agents","agent_tokens"]:
         try:
             op.execute(f'DROP POLICY IF EXISTS {tbl}_tenant_isolation ON "{tbl}";')
-        except Exception: pass
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning('Alembic step ignored due to error: %s', e)
     op.drop_index("ix_job_events_job_time", table_name="job_events")
     op.drop_table("job_events")
     op.drop_index("ix_jobs_run_order", table_name="jobs")

@@ -518,7 +518,10 @@ def plan_auto(engagement_id: str, body: AutoPlanIn, db: Session = Depends(get_db
             with open(pth,"r") as f: pj = json.load(f)
             if pj.get("id") in packs: pack_tests += pj.get("tests",[])
         sel += pack_tests
-    except Exception: pass
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).exception('Unhandled exception')
+        raise
     sel = [s for s in dict.fromkeys(sel) if s in ids]
     return {"engagement_id": e["id"], "selected_tests": [{"id": s, "params": {}} for s in sel], "explanation": "Heuristic selection + packs", "policy_denies": []}
 

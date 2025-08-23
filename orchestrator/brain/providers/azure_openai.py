@@ -11,16 +11,21 @@ class AzureOpenAIProvider(BaseProvider):
         deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT")
         if not (key and endpoint and deployment):
             raise RuntimeError("AZURE_OPENAI_* envs not set")
+        sys_prompt = "You are a senior pentest planner. Reply with compact JSON only: {selected_tests: string[], params: object}"
+        user_prompt = f"Engagement type: {engagement_type}\nScope: {json.dumps(scope)}\nPreferences: {json.dumps(preferences)}"
         body = {
             "messages":[
-                {"role":"system","content": "You are a senior pentest planner. Output JSON only."},
-                {"role":"user","content": f"Scope:\n{json.dumps(scope)}\nEngagement type: {engagement_type}\nReturn JSON { '{"selected_tests":[],"params":{}}' }"}
+                {"role":"system","content": sys_prompt},
+                {"role":"user","content": user_prompt}
             ],
-            "temperature": 0.2
+            "temperature": 0.1,
+            "max_tokens": 800
         }
-        r = requests.post(f"{endpoint}/openai/deployments/{deployment}/chat/completions?api-version=2024-02-15-preview",
-                          headers={"api-key": key, "content-type":"application/json"},
-                          json=body, timeout=60)
+        r = requests.post(
+            f"{endpoint}/openai/deployments/{deployment}/chat/completions?api-version=2024-02-15-preview",
+            headers={"api-key": key, "content-type":"application/json"},
+            json=body, timeout=60
+        )
         r.raise_for_status()
         data = r.json()
         txt = data["choices"][0]["message"]["content"]

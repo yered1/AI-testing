@@ -45,7 +45,9 @@ def downgrade():
     for tbl in ["brain_logs","brain_feedback"]:
         try:
             op.execute(f'DROP POLICY IF EXISTS {tbl}_tenant_isolation ON "{tbl}";')
-        except Exception: pass
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning('Alembic step ignored due to error: %s', e)
     op.drop_table("brain_logs")
     op.drop_index("ix_brain_feedback_tenant", table_name="brain_feedback")
     op.drop_table("brain_feedback")

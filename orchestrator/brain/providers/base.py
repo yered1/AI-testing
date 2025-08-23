@@ -1,14 +1,16 @@
+from __future__ import annotations
 from abc import ABC, abstractmethod
-from typing import Dict, Any
+from typing import Any, Dict
 
 class BaseProvider(ABC):
-    name = "base"
+    name: str = "base"
 
     @abstractmethod
     def plan(self, scope: Dict[str, Any], engagement_type: str, preferences: Dict[str, Any]) -> Dict[str, Any]:
-        """Return {selected_tests: [ids], params: {test_id: {}}, explanation: str} """
-        ...
+        raise NotImplementedError
 
-    def enrich(self, scope: Dict[str, Any], plan: Dict[str, Any]) -> Dict[str, Any]:
-        """Optionally add params based on scope; default is passthrough"""
-        return plan
+    def enrich(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        return {"data": data, "explanation": f"{self.name} enrich: no-op"}
+
+    def learn(self, feedback: Dict[str, Any]) -> Dict[str, Any]:
+        return {"ok": True, "explanation": f"{self.name} learn: no-op"}

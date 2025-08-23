@@ -1,40 +1,42 @@
-import tempfile, subprocess, os, json
-from fastapi import FastAPI, HTTPException, Response
-from pydantic import BaseModel, Field
-import requests
+import os
+import tempfile
+import subprocess
+from typing import Optional
+from fastapi import FastAPI, Body, HTTPException
+from fastapi.responses import Response, JSONResponse
 
-app = FastAPI(title="Reporter")
+app = FastAPI(title="Reporter (hardened)")
 
-class RenderIn(BaseModel):
-    html: str | None = Field(default=None, description="Raw HTML to render")
-    url: str | None = Field(default=None, description="URL to fetch and render")
-    title: str | None = "Report"
+ALLOW_REMOTE_URLS = os.environ.get("ALLOW_REMOTE_URLS", "0") in {"1","true","True"}
+WKHTMLTOPDF = os.environ.get("WKHTMLTOPDF_PATH", "wkhtmltopdf")
 
-@app.post("/render/pdf", response_class=Response)
-def render_pdf(inp: RenderIn):
-    if not (inp.html or inp.url):
-        raise HTTPException(400, "Provide html or url")
-    html = inp.html
-    if inp.url:
+def _run_wkhtmltopdf(input_html: str) -> bytes:
+    with tempfile.TemporaryDirectory() as td:
+        html_path = os.path.join(td, "doc.html")
+        pdf_path = os.path.join(td, "doc.pdf")
+        with open(html_path, "w", encoding="utf-8") as fh:
+            fh.write(input_html)
         try:
-            r = requests.get(inp.url, timeout=30)
-            r.raise_for_status()
-            html = r.text
+            subprocess.run([WKHTMLTOPDF, "--quiet", html_path, pdf_path], check=True)
         except Exception as e:
-            raise HTTPException(400, f"Fetch failed: {e}")
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".html") as f:
-        f.write(html.encode("utf-8"))
-        src = f.name
-    out = src.replace(".html",".pdf")
-    try:
-        cp = subprocess.run(["wkhtmltopdf", "--quiet", src, out], capture_output=True, text=True, timeout=60)
-        if cp.returncode != 0:
-            raise HTTPException(500, f"wkhtmltopdf failed: {cp.stderr[-500:]}")
-        data = open(out, "rb").read()
-        return Response(content=data, media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{(inp.title or "report")}.pdf"'})
-    finally:
-        for p in (src, out):
-            try:
-                os.remove(p)
-            except Exception:
-                pass
+            raise HTTPException(status_code=500, detail=f"wkhtmltopdf failed: {e}")
+        with open(pdf_path, "rb") as fh:
+            return fh.read()
+
+def _render(html: Optional[str], url: Optional[str]) -> bytes:
+    if url and not ALLOW_REMOTE_URLS:
+        raise HTTPException(status_code=400, detail="URL rendering disabled; submit HTML instead")
+    if not html:
+        raise HTTPException(status_code=400, detail="Missing 'html'")
+    return _run_wkhtmltopdf(html)
+
+def _resp(pdf: bytes):
+    return Response(pdf, media_type="application/pdf", headers={"Content-Disposition": "inline; filename=report.pdf"})
+
+@app.post("/render")
+def render_default(html: Optional[str] = Body(None), url: Optional[str] = Body(None)):
+    return _resp(_render(html, url))
+
+@app.get("/healthz")
+def healthz():
+    return JSONResponse({"ok": True})
