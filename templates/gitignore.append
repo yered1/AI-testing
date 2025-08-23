@@ -1,6 +1,8 @@
-# === ai-testing v1.4.2 junk filters ===
+
+# Consolidated ignores
 __pycache__/
 *.py[cod]
+*.pyo
 .pytest_cache/
 .mypy_cache/
 .tox/
@@ -11,5 +13,5 @@ __MACOSX/
 Thumbs.db
 .idea/
 .vscode/
-# Local auth configs
+# Local auth secrets
 infra/auth/.env.auth*

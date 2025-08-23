@@ -616,3 +616,31 @@ bash scripts/merge_gitignore_v142.sh
 ```
 
 > These scripts **do not** remove any product features. They only remove caches and platform cruft. Docs/merge scripts remain unless you archive them manually.
+
+
+
+
+# Delta v1.5.0 — Consolidation & Cleanup (safe) + Canonical router includes
+
+This release focuses on consolidation without removing features:
+- **README consolidation**: appends any `README_DELTA_v*.md` missing from `README.md`, then deletes delta files and old merge scripts.
+- **Bootstrap repair**: rewrites `orchestrator/bootstrap_extras.py` to include **all** routers found under `orchestrator/routers`, and mounts UI static where available.
+- **Strict cleanup**: removes platform junk and caches (`__MACOSX`, `.DS_Store`, `__pycache__`, etc.) with backup + DRY_RUN by default.
+- **.gitignore**: strengthens to prevent junk from returning.
+
+## Usage
+```bash
+# Consolidate README deltas, then delete delta/merge files
+bash scripts/consolidate_readme_v150.sh
+
+# Repair router includes (idempotent)
+bash scripts/repair_bootstrap_extras_v150.sh
+python3 scripts/verify_bootstrap_v150.py
+
+# Clean junk (dry-run -> delete)
+bash scripts/cleanup_strict_v150.sh
+DRY_RUN=0 bash scripts/cleanup_strict_v150.sh
+
+# Merge gitignore additions
+bash scripts/merge_gitignore_v150.sh
+```

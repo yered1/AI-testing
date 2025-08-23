@@ -1,223 +1,146 @@
 #!/usr/bin/env python3
-# Kali OS Agent — polls orchestrator over HTTPS (v2 bus), runs allowlisted tools locally
-import os, time, json, uuid, requests, subprocess, shlex, yaml, glob, pathlib, sys, platform
+import os, time, json, uuid, requests, subprocess, shlex, glob, sys, yaml
 
-ORCH = os.environ.get("ORCH_URL","http://localhost:8080").rstrip("/")
+ORCH = os.environ.get("ORCH_URL","http://orchestrator:8080")
 TENANT = os.environ.get("TENANT_ID","t_demo")
-ENROLL_TOKEN = os.environ.get("AGENT_TOKEN","")
-AGENT_NAME = os.environ.get("AGENT_NAME", f"kali-os-{uuid.uuid4().hex[:6]}")
-ALLOW_ACTIVE = os.environ.get("ALLOW_ACTIVE_SCAN","0").lower() in ("1","true","yes","on")
-VERIFY_TLS = os.environ.get("CA_BUNDLE") or os.environ.get("REQUESTS_CA_BUNDLE") or True
-WORKDIR = os.environ.get("AGENT_WORKDIR","/var/lib/kali-os-agent")
-TOOLS_FILE = os.environ.get("TOOLS_FILE","/etc/kali-os-agent/tools.yaml")
-KINDS = (os.environ.get("AGENT_KINDS") or "kali_os,kali_remote,cross_platform").split(",")
+NAME = os.environ.get("AGENT_NAME", f"kali-os-{uuid.uuid4().hex[:6]}")
+TOKEN = os.environ.get("AGENT_TOKEN","")
+ALLOW_ACTIVE = os.environ.get("ALLOW_ACTIVE_SCAN","0") in ("1","true","yes","on")
 
-# agent credentials after register
 AGENT_ID = None
 AGENT_KEY = None
 
-def mkdirs():
-    for d in [WORKDIR, os.path.dirname(TOOLS_FILE)]:
-        pathlib.Path(d).mkdir(parents=True, exist_ok=True)
+TOOLS_FILE = os.environ.get("TOOLS_FILE", "/etc/kali-os-agent/tools.yaml")
 
-def load_tools():
-    try:
-        with open(TOOLS_FILE, "r") as f:
-            return yaml.safe_load(f) or {}
-    except FileNotFoundError:
-        return {}
-
-def hdr(base=None):
-    h = {"X-Tenant-Id": TENANT, "Content-Type":"application/json"}
-    if base: h.update(base)
-    if AGENT_ID and AGENT_KEY:
-        h["X-Agent-Id"] = AGENT_ID
-        h["X-Agent-Key"] = AGENT_KEY
-    return h
+def hdr():
+    return {"X-Tenant-Id": TENANT, "X-Agent-Id": AGENT_ID or "", "X-Agent-Key": AGENT_KEY or "", "Content-Type":"application/json"}
 
 def register():
     global AGENT_ID, AGENT_KEY
-    if not ENROLL_TOKEN:
+    if not TOKEN:
         print("[kali-os] Missing AGENT_TOKEN", file=sys.stderr); sys.exit(2)
-    payload = {"enroll_token": ENROLL_TOKEN, "name": AGENT_NAME, "kind": "kali_os"}
-    r = requests.post(f"{ORCH}/v2/agents/register", headers={"X-Tenant-Id": TENANT, "Content-Type":"application/json"}, json=payload, verify=VERIFY_TLS, timeout=20)
+    r = requests.post(f"{ORCH}/v2/agents/register", json={
+        "enroll_token": TOKEN,
+        "name": NAME,
+        "kind": "kali_os"
+    }, headers={"X-Tenant-Id": TENANT}, timeout=30)
     r.raise_for_status()
     data = r.json()
-    AGENT_ID = data.get("agent_id")
-    AGENT_KEY = data.get("agent_key")
-    print(f"[kali-os] registered id={AGENT_ID} name={AGENT_NAME} kinds={KINDS}")
+    AGENT_ID = data["agent_id"]; AGENT_KEY = data["agent_key"]
+    print(f"[kali-os] registered id={AGENT_ID}")
 
-def event(job_id, typ, payload):
+def job_event(job_id, etype, payload):
     try:
-        requests.post(f"{ORCH}/v2/jobs/{job_id}/events", headers=hdr(), json={"type":typ, "payload": payload}, verify=VERIFY_TLS, timeout=20)
+        requests.post(f"{ORCH}/v2/jobs/{job_id}/events", headers=hdr(), json={"type": etype, "payload": payload}, timeout=20)
     except Exception as e:
-        print("[kali-os] event error:", e)
+        print("[kali-os] job_event error:", e)
 
-def complete(job_id, status, result):
+def job_complete(job_id, status, result):
     try:
-        requests.post(f"{ORCH}/v2/jobs/{job_id}/complete", headers=hdr(), json={"status":status, "result": result}, verify=VERIFY_TLS, timeout=60)
+        requests.post(f"{ORCH}/v2/jobs/{job_id}/complete", headers=hdr(), json={"status": status, "result": result}, timeout=40)
     except Exception as e:
-        print("[kali-os] complete error:", e)
+        print("[kali-os] job_complete error:", e)
 
-def upload_artifact(job_id, fpath):
+def upload_artifact(job_id, path):
     try:
-        fname = os.path.basename(fpath)
-        with open(fpath, "rb") as fp:
-            files = {"file": (fname, fp)}
-            # note: v2 artifacts endpoint may use form-data without content-type override
-            h = {"X-Tenant-Id": TENANT, "X-Agent-Id": AGENT_ID, "X-Agent-Key": AGENT_KEY}
-            r = requests.post(f"{ORCH}/v2/jobs/{job_id}/artifacts", headers=h, files=files, verify=VERIFY_TLS, timeout=120)
-            if r.status_code >= 400:
-                print("[kali-os] artifact upload failed", fpath, r.status_code, r.text[:200])
-            else:
-                print("[kali-os] artifact uploaded:", fname)
+        with open(path, "rb") as f:
+            files = {"file": (os.path.basename(path), f)}
+            # agent-authenticated artifact upload (your API expects JSON; if multipart is required, adjust accordingly)
+            requests.post(f"{ORCH}/v2/jobs/{job_id}/artifacts", headers={"X-Tenant-Id": TENANT, "X-Agent-Id": AGENT_ID, "X-Agent-Key": AGENT_KEY}, files=files, timeout=120)
+            print(f"[kali-os] uploaded artifact {path}")
     except Exception as e:
-        print("[kali-os] artifact upload error:", e)
+        print("[kali-os] upload artifact error:", e)
 
-def run_cmd(cmd, cwd, timeout=7200):
+def load_tools():
+    if not os.path.exists(TOOLS_FILE):
+        return {}
+    with open(TOOLS_FILE, "r") as f:
+        return yaml.safe_load(f) or {}
+
+def render_cmd(template, params):
+    # very basic safe param interpolation
+    def repl(m):
+        key = m.group(1)
+        val = params.get(key, "")
+        if isinstance(val, list):
+            return " ".join(shlex.quote(str(x)) for x in val)
+        return shlex.quote(str(val))
+    import re
+    return re.sub(r"\{\{(\w+)\}\}", repl, template)
+
+def run_cmd(cmd, timeout=7200):
+    print("[kali-os] run:", cmd)
     try:
-        print("[kali-os] running:", cmd)
-        cp = subprocess.run(cmd if isinstance(cmd, list) else shlex.split(cmd), cwd=cwd, capture_output=True, text=True, timeout=timeout)
-        out = {"rc": cp.returncode, "stdout": cp.stdout[-20000:], "stderr": cp.stderr[-20000:]}
-        return out
+        cp = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=timeout)
+        return {"rc": cp.returncode, "stdout": cp.stdout[-20000:], "stderr": cp.stderr[-20000:]}
     except subprocess.TimeoutExpired as e:
-        return {"rc": -9, "error":"timeout", "stdout": e.stdout[-10000:] if e.stdout else "", "stderr": e.stderr[-10000:] if e.stderr else ""}
+        return {"rc": -2, "timeout": True, "msg": str(e)}
     except Exception as e:
         return {"rc": -1, "error": str(e)}
 
-def render(template, params):
-    # simple Python format with {key}
-    try:
-        return template.format(**(params or {}))
-    except KeyError as e:
-        missing = str(e).strip("'")
-        raise RuntimeError(f"missing parameter: {missing}")
+def adapter_nmap_tcp_top_1000(job_id, params):
+    target = params.get("target") or params.get("host") or params.get("domain")
+    if not target:
+        return {"error":"missing target"}    
+    if not ALLOW_ACTIVE:
+        return {"note":"active scan blocked (ALLOW_ACTIVE_SCAN=0)","would_run": f"nmap -Pn --top-ports 1000 -T3 {shlex.quote(target)} -oN nmap_top1000.txt -oX nmap_top1000.xml"}
+    cmd = f"nmap -Pn --top-ports 1000 -T3 {shlex.quote(target)} -oN nmap_top1000.txt -oX nmap_top1000.xml"
+    res = run_cmd(cmd, timeout=10800)
+    for art in ["nmap_top1000.txt","nmap_top1000.xml"]:
+        if os.path.exists(art): upload_artifact(job_id, art)
+    return {"cmd": cmd, "exec": res}
 
-def select_tool(adapter, params, tools):
-    # adapter may be 'nmap_tcp_top_1000' or 'run_tool' with params['tool']
-    if adapter in tools.get("tools", {}):
-        return adapter, tools["tools"][adapter]
-    if adapter in ("run_tool","remote_tool","kali_run_tool"):
-        toolname = (params or {}).get("tool")
-        if toolname and toolname in tools.get("tools", {}):
-            return toolname, tools["tools"][toolname]
-    # common mapping
-    if adapter == "nmap_tcp_top_1000" and "nmap_tcp_top_1000" in tools.get("tools", {}):
-        return "nmap_tcp_top_1000", tools["tools"]["nmap_tcp_top_1000"]
-    return None, None
+def adapter_run_tool(job_id, params):
+    tool = params.get("tool")
+    tools = load_tools()
+    spec = tools.get(tool or "")
+    if not spec:
+        return {"error": f"tool '{tool}' not in allowlist"}
+    if spec.get("active") and not ALLOW_ACTIVE:
+        return {"note": f"active tool '{tool}' blocked (ALLOW_ACTIVE_SCAN=0)"}
+    tmpl = spec.get("cmd","")
+    cmd = render_cmd(tmpl, params)
+    res = run_cmd(cmd, timeout=int(spec.get("timeout", 7200)))
+    for pat in spec.get("artifacts", []):
+        for path in glob.glob(pat):
+            upload_artifact(job_id, path)
+    return {"tool": tool, "cmd": cmd, "exec": res}
 
-def handle_job(job, tools):
-    job_id = job["id"]
+def run_job(job):
+    job_id = job.get("id")
     adapter = (job.get("adapter") or "").strip()
     params = job.get("params") or {}
-    work = os.path.join(WORKDIR, "jobs", job_id)
-    pathlib.Path(work).mkdir(parents=True, exist_ok=True)
-
-    # pick tool & template
-    tname, tdef = select_tool(adapter, params, tools)
-    if not tdef:
-        event(job_id, "agent.error", {"msg":"no tool mapping for adapter", "adapter":adapter, "params":params})
-        complete(job_id, "failed", {"error":"no tool mapping", "adapter":adapter})
-        return
-
-    # active check
-    active = bool(tdef.get("active", False))
-    if active and not ALLOW_ACTIVE:
-        complete(job_id, "skipped", {"note":"dry-run (ALLOW_ACTIVE_SCAN=0)", "adapter":adapter, "tool":tname})
-        return
-
-    # build command
+    job_event(job_id, "job.started", {"adapter": adapter})
     try:
-        cmd = render(tdef.get("cmd","").strip(), params)
+        if adapter == "nmap_tcp_top_1000":
+            result = adapter_nmap_tcp_top_1000(job_id, params)
+        elif adapter == "run_tool":
+            result = adapter_run_tool(job_id, params)
+        else:
+            result = {"error": f"adapter '{adapter}' not supported by kali_os agent"}
+        job_complete(job_id, "succeeded", result)
     except Exception as e:
-        complete(job_id, "failed", {"error": f"render error: {e}", "adapter":adapter, "tool":tname})
-        return
+        job_complete(job_id, "failed", {"error": str(e)})
 
-    timeout = int(tdef.get("timeout", 7200))
-    event(job_id, "job.started", {"adapter":adapter, "tool":tname, "cmd":cmd})
-    res = run_cmd(cmd, cwd=work, timeout=timeout)
-
-    # collect artifacts
-    art_globs = tdef.get("artifacts", [])
-    uploaded = []
-    for g in art_globs:
-        for fp in glob.glob(os.path.join(work, g)):
-            upload_artifact(job_id, fp)
-            uploaded.append(os.path.basename(fp))
-
-    # result payload
-    result = {"adapter":adapter, "tool":tname, "cmd":cmd, "exec":res, "artifacts":uploaded, "workdir":work}
-    status = "succeeded" if res.get("rc",1) == 0 else "failed"
-    complete(job_id, status, result)
-
-def loop():
-    tools = load_tools()
+def main():
+    register()
     idle = 0
     while True:
         try:
-            # heartbeat
-            try:
-                requests.post(f"{ORCH}/v2/agents/heartbeat", headers=hdr(), json={}, verify=VERIFY_TLS, timeout=10)
-            except Exception as e:
-                # just log
-                print("[kali-os] heartbeat error:", e)
-
-            # lease job (prefer lease2)
-            try:
-                lr = requests.post(f"{ORCH}/v2/agents/lease", headers=hdr(), json={"kinds": KINDS}, verify=VERIFY_TLS, timeout=40)
-                if lr.status_code == 204:
-                    idle += 1; time.sleep(2); continue
-                lr.raise_for_status()
-                job = lr.json()
-            except Exception as e:
-                print("[kali-os] lease error:", e)
-                time.sleep(3); continue
-
+            requests.post(f"{ORCH}/v2/agents/heartbeat", headers=hdr(), timeout=10)
+            # prefer lease2
+            lr = requests.post(f"{ORCH}/v2/agents/lease2", headers=hdr(), json={"kinds":["kali_os"]}, timeout=40)
+            if lr.status_code == 404:
+                lr = requests.post(f"{ORCH}/v2/agents/lease", headers=hdr(), json={"kinds":["kali_os"]}, timeout=40)
+            if lr.status_code == 204:
+                idle += 1; time.sleep(min(10, 1+idle)); continue
             idle = 0
-            handle_job(job, tools)
-        except KeyboardInterrupt:
-            print("[kali-os] exiting"); return
+            lr.raise_for_status()
+            job = lr.json()
+            run_job(job)
         except Exception as e:
             print("[kali-os] loop error:", e)
-            time.sleep(2)
-
-def main():
-    print(f"[kali-os] starting on {platform.platform()} py{sys.version.split()[0]}")
-    mkdirs()
-    if not os.path.exists(TOOLS_FILE):
-        # seed with defaults
-        default = {
-            "tools": {
-                "nmap_tcp_top_1000": {
-                    "cmd": "nmap -Pn --top-ports 1000 -T3 {target} -oN nmap_top1000.txt",
-                    "active": True,
-                    "timeout": 7200,
-                    "artifacts": ["nmap_top1000.txt"]
-                },
-                "ffuf_dirb": {
-                    "cmd": "ffuf -u {url}/FUZZ -w {wordlist} -mc 200,204,301,302,307,401,403 -o ffuf.json -of json",
-                    "active": True,
-                    "timeout": 3600,
-                    "artifacts": ["ffuf.json"]
-                },
-                "gobuster_dir": {
-                    "cmd": "gobuster dir -u {url} -w {wordlist} -t 50 -o gobuster.txt",
-                    "active": True,
-                    "timeout": 3600,
-                    "artifacts": ["gobuster.txt"]
-                },
-                "sqlmap_basic": {
-                    "cmd": "sqlmap -u {url} --batch --risk=1 --level=1 --output-dir=.",
-                    "active": True,
-                    "timeout": 14400,
-                    "artifacts": ["output/*"]
-                }
-            }
-        }
-        pathlib.Path(TOOLS_FILE).write_text(yaml.safe_dump(default), encoding="utf-8")
-        print("[kali-os] seeded tools.yaml at", TOOLS_FILE)
-    register()
-    loop()
+            time.sleep(3)
 
 if __name__ == "__main__":
     main()

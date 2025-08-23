@@ -27,3 +27,21 @@ Thumbs.db
 .vscode/
 # Local auth configs
 infra/auth/.env.auth*
+
+
+# Consolidated ignores
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.tox/
+.coverage*
+htmlcov/
+.DS_Store
+__MACOSX/
+Thumbs.db
+.idea/
+.vscode/
+# Local auth secrets
+infra/auth/.env.auth*
