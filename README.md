@@ -1,100 +1,191 @@
 # AI-Testing Platform
 
-A comprehensive security testing orchestration platform that automates various security testing methodologies including web application testing, network scanning, code analysis, and mobile application testing.
+A comprehensive automated security testing orchestration platform that manages distributed security testing agents for web applications, APIs, mobile apps, and infrastructure.
 
-## Features
+## 🚀 Features
 
-- **Multi-Agent Architecture**: Distributed testing agents for various security tools
-- **AI-Powered Planning**: Intelligent test plan generation and risk assessment
-- **Comprehensive Testing**: Web, network, code, mobile, and infrastructure testing
-- **RBAC & Multi-tenancy**: Enterprise-ready access control
-- **Real-time Reporting**: Live test execution monitoring and comprehensive reports
+- **Multi-Agent Architecture**: Distributed testing with specialized agents (ZAP, Nuclei, Semgrep, Nmap, Kali tools)
+- **AI-Powered Planning**: Intelligent test plan generation using OpenAI/Anthropic
+- **Comprehensive Coverage**: Web, API, mobile, network, and code security testing
+- **Enterprise Ready**: RBAC, multi-tenancy, audit logging
+- **Real-time Monitoring**: Live test execution tracking and reporting
 
-## Quick Start
+## 📋 Prerequisites
 
-### Prerequisites
-
-- Docker & Docker Compose
+- Docker & Docker Compose v2
 - Python 3.9+
 - 8GB RAM minimum
-- Linux or macOS
+- Linux/macOS (Windows WSL2 supported)
 
-### Installation
+## 🔧 Quick Start
 
+### 1. Clone and Setup
 ```bash
-# Clone repository
 git clone https://github.com/yered1/AI-testing.git
 cd AI-testing
-
-# Setup environment
-cp config/default.env .env
-# Edit .env with your configuration
-
-# Start platform
-./scripts/manage.sh full-start
-
-# Access the platform
-open http://localhost:8080/ui
+cp .env.example .env
 ```
 
-### Basic Usage
+### 2. Configure Environment
+Edit `.env` and set:
+- `SECRET_KEY` - Generate a secure random string
+- `DB_PASSWORD` - Change from default
+- AI provider keys (optional): `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`
+
+### 3. Start Platform
+```bash
+# Start all services and initialize
+./scripts/manage.sh full-start
+
+# Verify health
+./scripts/manage.sh status
+```
+
+### 4. Access Platform
+- API: http://localhost:8080
+- UI: http://localhost:8080/ui
+- Health: http://localhost:8080/health
+
+## 📚 Documentation
+
+- [Architecture Overview](docs/ARCHITECTURE.md)
+- [API Documentation](docs/API.md)
+- [Agent Development](docs/AGENTS.md)
+- [Deployment Guide](docs/DEPLOYMENT.md)
+- [Security Guidelines](docs/SECURITY.md)
+
+## 🛠 Management Commands
 
 ```bash
-# Service management
+# Service Management
 ./scripts/manage.sh up          # Start services
 ./scripts/manage.sh down        # Stop services
+./scripts/manage.sh restart     # Restart services
 ./scripts/manage.sh logs        # View logs
 ./scripts/manage.sh status      # Check status
 
+# Database
+./scripts/manage.sh migrate     # Run migrations
+./scripts/manage.sh db-shell    # PostgreSQL shell
+
 # Testing
-./scripts/manage.sh test        # Run smoke tests
+./scripts/manage.sh test        # Run tests
+./scripts/manage.sh test-api    # Quick health check
 
-# Agent management
-./scripts/manage.sh agent-token my-agent  # Generate agent token
+# Agents
+./scripts/manage.sh agent-token [name]  # Generate token
+
+# Development
+./scripts/manage.sh shell       # Orchestrator shell
+./scripts/manage.sh clean       # Clean temp files
 ```
 
-## Architecture
+## 🧪 Running a Security Test
 
-The platform consists of:
-- **Orchestrator**: Core API service managing test execution
-- **Agents**: Distributed testing agents (ZAP, Nuclei, Semgrep, Nmap, etc.)
-- **UI**: Web interface for test management
-- **Brain**: AI-powered test planning and analysis
-- **OPA**: Policy engine for access control
-
-## API Documentation
-
-### Authentication
+### Via API
 ```bash
-curl -X POST http://localhost:8080/v2/auth/token \
+# 1. Create engagement
+curl -X POST http://localhost:8080/v2/engagements \
   -H "Content-Type: application/json" \
-  -d '{"username": "admin", "password": "password"}'
+  -d '{
+    "name": "Test Scan",
+    "type": "web_application",
+    "scope": {"targets": ["http://example.com"]}
+  }'
+
+# 2. Create and run plan
+# See API documentation for details
 ```
 
-### Core Endpoints
-- `POST /v2/engagements` - Create engagement
-- `POST /v2/engagements/{id}/plan` - Create test plan
-- `POST /v2/plans/{id}/run` - Start test run
-- `GET /v2/reports/run/{id}` - Get report
+### Via UI
+1. Navigate to http://localhost:8080/ui/builder
+2. Create engagement
+3. Select tests
+4. Run and monitor
 
-## Development
+## 🤖 Available Agents
 
-### Running Tests
+| Agent | Purpose | Status |
+|-------|---------|--------|
+| ZAP | Web app scanning | ✅ Ready |
+| Nuclei | Vulnerability detection | ✅ Ready |
+| Semgrep | Code analysis | ✅ Ready |
+| Nmap | Network scanning | ✅ Ready |
+| Mobile APK | Android analysis | ✅ Ready |
+| Kali Remote | Advanced tools | ✅ Ready |
+
+## 🏗 Architecture
+
+```
+┌─────────────┐     ┌──────────────┐     ┌─────────────┐
+│     UI      │────▶│ Orchestrator │────▶│   Agents    │
+└─────────────┘     └──────────────┘     └─────────────┘
+                           │                     │
+                           ▼                     ▼
+                    ┌──────────────┐     ┌─────────────┐
+                    │   Database   │     │   Reports   │
+                    └──────────────┘     └─────────────┘
+```
+
+## 🔒 Security
+
+⚠️ **Important Security Notes:**
+- **NEVER** set `ALLOW_ACTIVE_SCAN=1` without proper authorization
+- Use strong passwords and rotate tokens regularly
+- Enable TLS in production
+- Review security policies before deployment
+- Implement network segmentation for agents
+
+## 🐛 Troubleshooting
+
+### Services won't start
 ```bash
-# Unit tests
-pytest tests/unit
+# Check Docker
+docker info
+./scripts/manage.sh status
 
-# Integration tests
-pytest tests/integration
+# Check ports
+sudo lsof -i :8080
+sudo lsof -i :5432
+```
 
-# Smoke tests
-./scripts/manage.sh test
+### Database issues
+```bash
+# Reset database (DELETES DATA)
+./scripts/manage.sh full-reset
+```
+
+### View logs
+```bash
+./scripts/manage.sh logs orchestrator
+./scripts/manage.sh logs db
+```
+
+## 📦 Development
+
+### Project Structure
+```
+ai-testing/
+├── orchestrator/     # Core API service
+├── agents/          # Testing agents
+├── ui/              # Web interface
+├── infra/           # Infrastructure configs
+├── scripts/         # Management scripts
+├── policies/        # OPA policies
+└── docs/           # Documentation
 ```
 
 ### Adding New Agents
-See [docs/AGENTS.md](docs/AGENTS.md) for agent development guide.
+See [Agent Development Guide](docs/AGENTS.md)
 
-## Deployment
+### Running Tests
+```bash
+pytest tests/unit
+pytest tests/integration
+./scripts/manage.sh test
+```
+
+## 🚢 Deployment
 
 ### Docker Compose (Development)
 ```bash
@@ -106,29 +197,29 @@ docker compose -f infra/docker-compose.yml up -d
 kubectl apply -f infra/kubernetes/
 ```
 
-See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for detailed deployment instructions.
+### Cloud Deployment
+- AWS: Use ECS or EKS
+- GCP: Use Cloud Run or GKE
+- Azure: Use Container Instances or AKS
 
-## Security
+See [Deployment Guide](docs/DEPLOYMENT.md) for details.
 
-⚠️ **Important Security Notes**:
-- Never enable `ALLOW_ACTIVE_SCAN` without proper authorization
-- Rotate agent tokens regularly
-- Use TLS in production
-- Review [docs/SECURITY.md](docs/SECURITY.md) before deployment
+## 📄 License
 
-## Contributing
+[Specify your license]
+
+## 🤝 Contributing
 
 1. Fork the repository
-2. Create feature branch
-3. Commit changes
-4. Push to branch
-5. Create Pull Request
+2. Create feature branch (`git checkout -b feature/amazing`)
+3. Commit changes (`git commit -m 'Add amazing feature'`)
+4. Push to branch (`git push origin feature/amazing`)
+5. Open Pull Request
 
-## License
-
-[Your License]
-
-## Support
+## 📞 Support
 
 - Issues: https://github.com/yered1/AI-testing/issues
 - Documentation: [docs/](docs/)
+
+---
+Built with ❤️ for the security community

@@ -1,139 +1,198 @@
 #!/bin/bash
 # AI-Testing Platform Management Script
-# Central control for all platform operations
+# Central control point for all operations
 
 set -e
-
-COMMAND=${1:-help}
-shift || true
 
 # Color codes
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
+RED='\033[0;31m'
 NC='\033[0m'
 
+COMPOSE_FILE="infra/docker-compose.yml"
+COMMAND=${1:-help}
+shift || true
+
+# Helper functions
+log_info() { echo -e "${BLUE}ℹ${NC} $1"; }
+log_success() { echo -e "${GREEN}✓${NC} $1"; }
+log_warning() { echo -e "${YELLOW}⚠${NC} $1"; }
+log_error() { echo -e "${RED}✗${NC} $1"; }
+
 case "$COMMAND" in
-    # Service Management
+    # ===== SERVICE MANAGEMENT =====
     up)
-        echo -e "${BLUE}Starting AI-Testing Platform...${NC}"
-        docker compose -f infra/docker-compose.yml up -d "$@"
-        echo -e "${GREEN}Platform started! Access at http://localhost:8080${NC}"
+        log_info "Starting AI-Testing Platform..."
+        docker compose -f $COMPOSE_FILE up -d "$@"
+        log_success "Platform started! Access at http://localhost:8080"
         ;;
     
     down)
-        echo -e "${YELLOW}Stopping AI-Testing Platform...${NC}"
-        docker compose -f infra/docker-compose.yml down "$@"
+        log_warning "Stopping AI-Testing Platform..."
+        docker compose -f $COMPOSE_FILE down "$@"
+        log_success "Platform stopped"
         ;;
     
     restart)
         $0 down
+        sleep 2
         $0 up
         ;;
     
     logs)
-        docker compose -f infra/docker-compose.yml logs -f "$@"
+        docker compose -f $COMPOSE_FILE logs -f "$@"
         ;;
     
     status)
-        docker compose -f infra/docker-compose.yml ps
+        echo -e "${BLUE}═══ AI-Testing Platform Status ═══${NC}"
+        docker compose -f $COMPOSE_FILE ps
+        echo ""
+        echo "Health Check:"
+        curl -s http://localhost:8080/health 2>/dev/null | python3 -m json.tool || echo "API not responding"
         ;;
     
-    # Database Operations
+    # ===== DATABASE OPERATIONS =====
     migrate)
-        echo -e "${BLUE}Running database migrations...${NC}"
-        docker compose -f infra/docker-compose.yml exec orchestrator alembic upgrade head
-        echo -e "${GREEN}Migrations complete!${NC}"
+        log_info "Running database migrations..."
+        docker compose -f $COMPOSE_FILE exec orchestrator alembic upgrade head
+        log_success "Migrations complete!"
         ;;
     
     db-shell)
-        docker compose -f infra/docker-compose.yml exec db psql -U postgres -d ai_testing
+        docker compose -f $COMPOSE_FILE exec db psql -U postgres -d ai_testing
         ;;
     
-    # Testing
+    db-backup)
+        BACKUP_FILE="backup_$(date +%Y%m%d_%H%M%S).sql"
+        log_info "Creating database backup: $BACKUP_FILE"
+        docker compose -f $COMPOSE_FILE exec -T db pg_dump -U postgres ai_testing > $BACKUP_FILE
+        log_success "Backup saved to $BACKUP_FILE"
+        ;;
+    
+    # ===== TESTING =====
     test)
-        echo -e "${BLUE}Running smoke tests...${NC}"
-        python scripts/testing/smoke_test.py "$@"
+        log_info "Running smoke tests..."
+        if [ -f "scripts/testing/smoke_test.py" ]; then
+            python3 scripts/testing/smoke_test.py "$@"
+        else
+            curl -s http://localhost:8080/health | python3 -m json.tool
+        fi
         ;;
     
     test-api)
-        curl -s http://localhost:8080/health | jq .
+        echo "Testing API endpoints..."
+        echo "1. Health check:"
+        curl -s http://localhost:8080/health | python3 -m json.tool
+        echo -e "\n2. Catalog:"
+        curl -s http://localhost:8080/v2/catalog | python3 -m json.tool
         ;;
     
-    # Agent Management
+    # ===== AGENT MANAGEMENT =====
     agent-token)
         AGENT_NAME=${1:-agent}
-        curl -s -X POST http://localhost:8080/v2/agent_tokens \
+        log_info "Generating token for agent: $AGENT_NAME"
+        TOKEN=$(curl -s -X POST http://localhost:8080/v2/agent_tokens \
             -H 'Content-Type: application/json' \
             -H 'X-Dev-User: admin' \
             -H 'X-Dev-Email: admin@test.local' \
             -H 'X-Tenant-Id: t_default' \
-            -d '{"tenant_id":"t_default","name":"'$AGENT_NAME'"}' | jq -r .token
+            -d '{"tenant_id":"t_default","name":"'$AGENT_NAME'"}' | python3 -c "import sys, json; print(json.load(sys.stdin).get('token', 'ERROR'))")
+        echo -e "${GREEN}Token:${NC} $TOKEN"
         ;;
     
-    # Development
+    agents-start)
+        log_info "Starting all agents..."
+        docker compose -f $COMPOSE_FILE --profile agents up -d
+        log_success "Agents started"
+        ;;
+    
+    # ===== DEVELOPMENT =====
     shell)
-        docker compose -f infra/docker-compose.yml exec orchestrator /bin/bash
+        docker compose -f $COMPOSE_FILE exec orchestrator /bin/bash
+        ;;
+    
+    redis-cli)
+        docker compose -f $COMPOSE_FILE exec redis redis-cli
         ;;
     
     clean)
-        echo -e "${YELLOW}Cleaning temporary files...${NC}"
+        log_warning "Cleaning temporary files..."
         find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
         find . -name "*.pyc" -delete 2>/dev/null || true
         find . -name ".DS_Store" -delete 2>/dev/null || true
-        echo -e "${GREEN}Cleanup complete!${NC}"
+        docker system prune -f
+        log_success "Cleanup complete!"
         ;;
     
-    # Full Stack Operations
+    # ===== FULL STACK OPERATIONS =====
     full-start)
+        log_info "Starting full stack..."
         $0 up
         sleep 5
-        $0 migrate
-        echo -e "${GREEN}Full stack ready!${NC}"
+        $0 migrate || true
+        $0 status
+        log_success "Full stack ready!"
         ;;
     
     full-reset)
-        echo -e "${YELLOW}WARNING: This will delete all data!${NC}"
-        read -p "Continue? (y/n) " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
+        log_error "WARNING: This will delete ALL data!"
+        read -p "Are you sure? Type 'yes' to continue: " -r
+        if [[ $REPLY == "yes" ]]; then
             $0 down -v
             $0 full-start
+        else
+            echo "Cancelled"
         fi
         ;;
     
+    # ===== HELP =====
     help)
-        echo "AI-Testing Platform Management"
-        echo "=============================="
-        echo "Service Management:"
-        echo "  up              - Start all services"
-        echo "  down            - Stop all services"
-        echo "  restart         - Restart all services"
-        echo "  logs [service]  - View logs"
-        echo "  status          - Show service status"
-        echo ""
-        echo "Database:"
-        echo "  migrate         - Run database migrations"
-        echo "  db-shell        - Open PostgreSQL shell"
-        echo ""
-        echo "Testing:"
-        echo "  test            - Run smoke tests"
-        echo "  test-api        - Quick API health check"
-        echo ""
-        echo "Agents:"
-        echo "  agent-token [name] - Generate agent token"
-        echo ""
-        echo "Development:"
-        echo "  shell           - Open orchestrator shell"
-        echo "  clean           - Clean temporary files"
-        echo ""
-        echo "Full Stack:"
-        echo "  full-start      - Start and initialize everything"
-        echo "  full-reset      - Reset everything (DELETES DATA)"
+        cat << HELP
+${BLUE}AI-Testing Platform Management${NC}
+═══════════════════════════════════════
+
+${GREEN}Service Management:${NC}
+  up              Start all services
+  down            Stop all services
+  restart         Restart all services
+  logs [service]  View logs (follow mode)
+  status          Show service status
+
+${GREEN}Database:${NC}
+  migrate         Run database migrations
+  db-shell        Open PostgreSQL shell
+  db-backup       Create database backup
+
+${GREEN}Testing:${NC}
+  test            Run smoke tests
+  test-api        Quick API endpoint test
+
+${GREEN}Agents:${NC}
+  agent-token [name]  Generate agent token
+  agents-start        Start all agents
+
+${GREEN}Development:${NC}
+  shell           Open orchestrator shell
+  redis-cli       Open Redis CLI
+  clean           Clean temporary files
+
+${GREEN}Full Stack:${NC}
+  full-start      Start and initialize everything
+  full-reset      Reset everything (DELETES DATA!)
+
+${GREEN}Examples:${NC}
+  $0 up                    # Start platform
+  $0 logs orchestrator     # View orchestrator logs
+  $0 agent-token zap       # Generate token for ZAP agent
+  $0 test                  # Run tests
+
+HELP
         ;;
     
     *)
-        echo "Unknown command: $COMMAND"
+        log_error "Unknown command: $COMMAND"
         echo "Run '$0 help' for usage"
         exit 1
         ;;

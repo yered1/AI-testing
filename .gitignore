@@ -24,18 +24,15 @@ MANIFEST
 .coverage
 .coverage.*
 .cache
-nosetests.xml
-coverage.xml
-*.cover
-.hypothesis/
-.pytype/
+.tox/
+.mypy_cache/
+.ruff_cache/
 
 # Virtual Environments
 venv/
 ENV/
 env/
 .venv/
-.ENV/
 .env/
 
 # IDEs
@@ -43,27 +40,26 @@ env/
 .idea/
 *.sublime-project
 *.sublime-workspace
-.project
-.pydevproject
-.settings/
 *.swp
 *.swo
 *~
+
+# OS
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+__MACOSX/
 
-# Node
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.npm
-.yarn-integrity
-
-# Environment files
+# Environment
 .env
 .env.local
 .env.*.local
 *.env
+!.env.example
 
 # Logs
 logs/
@@ -71,27 +67,21 @@ logs/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-lerna-debug.log*
 
-# OS files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-__MACOSX/
+# Node
+node_modules/
+.npm
+.yarn-integrity
 
 # Docker
 .dockerignore
 
-# Application specific
+# Application
 evidence/
 uploads/
 temp/
 tmp/
-backup_*/
+backup*/
 *.backup
 *.bak
 *.orig
@@ -108,7 +98,8 @@ credentials/
 *.db
 *.sqlite
 *.sqlite3
-migrations/versions/*.pyc
+*.sql
+!init.sql
 
 # Archives
 *.zip
@@ -117,7 +108,9 @@ migrations/versions/*.pyc
 *.rar
 *.7z
 
-# Reports
-reports/*.pdf
-reports/*.html
-exports/
+# IDE specific
+.project
+.pydevproject
+.settings/
+nbproject/
+.nb-gradle/

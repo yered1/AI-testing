@@ -1,51 +1,65 @@
-# AI-Testing Platform - Main Docker Compose Configuration
-# Usage: docker compose up -d
-# Profiles: default, agents, full, dev
-
+# AI-Testing Platform - Docker Compose Configuration
 version: '3.8'
 
 x-common-env: &common-env
   LOG_LEVEL: ${LOG_LEVEL:-INFO}
   TZ: ${TZ:-UTC}
 
+x-healthcheck-defaults: &healthcheck-defaults
+  interval: 30s
+  timeout: 10s
+  retries: 3
+  start_period: 40s
+
 services:
   # ============= CORE SERVICES =============
   db:
     image: postgres:15-alpine
     container_name: ai_testing_db
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${DB_NAME:-ai_testing}
       POSTGRES_USER: ${DB_USER:-postgres}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=en_US.UTF-8"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./init-scripts:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      <<: *healthcheck-defaults
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-ai_testing}"]
     networks:
       - ai_testing
+    ports:
+      - "127.0.0.1:5432:5432"
 
   redis:
     image: redis:7-alpine
     container_name: ai_testing_redis
-    command: redis-server --appendonly yes
+    restart: unless-stopped
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
     volumes:
       - redis_data:/data
     healthcheck:
+      <<: *healthcheck-defaults
       test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
     networks:
       - ai_testing
+    ports:
+      - "127.0.0.1:6379:6379"
 
   orchestrator:
     build:
       context: ../orchestrator
       dockerfile: Dockerfile
+      args:
+        PYTHON_VERSION: "3.11"
     container_name: ai_testing_orchestrator
+    restart: unless-stopped
     environment:
       <<: *common-env
       DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-ai_testing}
@@ -54,108 +68,179 @@ services:
       ALLOW_ACTIVE_SCAN: ${ALLOW_ACTIVE_SCAN:-0}
       EVIDENCE_DIR: ${EVIDENCE_DIR:-/evidence}
       OPA_URL: ${OPA_URL:-http://opa:8181}
-      # AI Providers (optional)
+      # AI Providers
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       AZURE_OPENAI_KEY: ${AZURE_OPENAI_KEY:-}
       AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
+      # Features
+      ENABLE_UI: ${ENABLE_UI:-true}
+      ENABLE_RBAC: ${ENABLE_RBAC:-false}
     volumes:
       - evidence_data:/evidence
       - ../orchestrator:/app
+      - ./logs/orchestrator:/var/log/orchestrator
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
+      opa:
+        condition: service_started
     ports:
       - "${API_PORT:-8080}:8080"
     healthcheck:
+      <<: *healthcheck-defaults
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
     networks:
       - ai_testing
 
   opa:
     image: openpolicyagent/opa:0.65.0
     container_name: ai_testing_opa
-    command: ["run", "--server", "--addr", ":8181", "/policies"]
+    restart: unless-stopped
+    command: >
+      run
+      --server
+      --addr :8181
+      --set decision_logs.console=true
+      /policies
     volumes:
       - ../policies:/policies:ro
     ports:
-      - "${OPA_PORT:-8181}:8181"
+      - "127.0.0.1:${OPA_PORT:-8181}:8181"
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "curl", "-f", "http://localhost:8181/health"]
     networks:
       - ai_testing
 
-  # ============= UI SERVICE (Profile: full, dev) =============
+  # ============= UI SERVICE (Optional) =============
   ui:
     build:
       context: ../ui
       dockerfile: Dockerfile
+      target: ${UI_BUILD_TARGET:-production}
     container_name: ai_testing_ui
-    profiles: ["full", "dev"]
+    restart: unless-stopped
+    profiles: ["full", "ui"]
     environment:
+      NODE_ENV: ${NODE_ENV:-production}
       API_URL: ${API_URL:-http://orchestrator:8080}
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:3000}
     depends_on:
-      - orchestrator
+      orchestrator:
+        condition: service_healthy
     ports:
       - "${UI_PORT:-3000}:3000"
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
     networks:
       - ai_testing
 
-  # ============= AGENTS (Profile: agents, full) =============
+  # ============= AGENTS (Use profiles to enable) =============
+  
+  # ZAP Agent
   zap-agent:
     build:
       context: ../agents/zap_agent
       dockerfile: Dockerfile
     container_name: ai_testing_zap
+    restart: unless-stopped
     profiles: ["agents", "full"]
     environment:
       <<: *common-env
       ORCHESTRATOR_URL: http://orchestrator:8080
       AGENT_TOKEN: ${ZAP_AGENT_TOKEN}
+      AGENT_NAME: zap-agent
       ALLOW_ACTIVE_SCAN: ${ALLOW_ACTIVE_SCAN:-0}
+    volumes:
+      - zap_data:/zap/wrk
     depends_on:
-      - orchestrator
+      orchestrator:
+        condition: service_healthy
     networks:
       - ai_testing
 
+  # Nuclei Agent
   nuclei-agent:
     build:
       context: ../agents/nuclei_agent
       dockerfile: Dockerfile
     container_name: ai_testing_nuclei
+    restart: unless-stopped
     profiles: ["agents", "full"]
     environment:
       <<: *common-env
       ORCHESTRATOR_URL: http://orchestrator:8080
       AGENT_TOKEN: ${NUCLEI_AGENT_TOKEN}
+      AGENT_NAME: nuclei-agent
+    volumes:
+      - nuclei_templates:/root/nuclei-templates
     depends_on:
-      - orchestrator
+      orchestrator:
+        condition: service_healthy
     networks:
       - ai_testing
 
+  # Semgrep Agent
   semgrep-agent:
     build:
       context: ../agents/semgrep_agent
       dockerfile: Dockerfile
     container_name: ai_testing_semgrep
+    restart: unless-stopped
     profiles: ["agents", "full"]
     environment:
       <<: *common-env
       ORCHESTRATOR_URL: http://orchestrator:8080
       AGENT_TOKEN: ${SEMGREP_AGENT_TOKEN}
+      AGENT_NAME: semgrep-agent
     depends_on:
-      - orchestrator
+      orchestrator:
+        condition: service_healthy
     networks:
       - ai_testing
 
+  # Nmap Agent
+  nmap-agent:
+    build:
+      context: ../agents/nmap_agent
+      dockerfile: Dockerfile
+    container_name: ai_testing_nmap
+    restart: unless-stopped
+    profiles: ["agents", "full", "network"]
+    environment:
+      <<: *common-env
+      ORCHESTRATOR_URL: http://orchestrator:8080
+      AGENT_TOKEN: ${NMAP_AGENT_TOKEN}
+      AGENT_NAME: nmap-agent
+      ALLOW_ACTIVE_SCAN: ${ALLOW_ACTIVE_SCAN:-0}
+    depends_on:
+      orchestrator:
+        condition: service_healthy
+    networks:
+      - ai_testing
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+
 volumes:
   postgres_data:
+    driver: local
   redis_data:
+    driver: local
   evidence_data:
+    driver: local
+  zap_data:
+    driver: local
+  nuclei_templates:
+    driver: local
 
 networks:
   ai_testing:
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
