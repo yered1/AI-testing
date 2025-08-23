@@ -363,3 +363,27 @@ open http://localhost:8080/ui/mobile
 ```
 
 > Notes: The analysis is **static** and safe. Provide an APK via the UI or `POST /v2/runs/{id}/artifacts` with label `mobile_apk`. The agent prefers `/v2/agents/lease2` to discover the run context; falls back to legacy lease if needed.
+-e 
+
+
+
+# Delta v1.0.0 — Test Builder UI (additive)
+
+Adds a self-serve UI at **/ui/builder** to:
+- Create an engagement (tenant, type, scope)
+- Browse **catalog** (tests + packs), select via checkboxes
+- Optional **per-test params** editor (JSON per test)
+- **Validate** → **Create Plan** → **Start Run**
+- Quick links to live events, findings, artifacts, and the **Report Bundle** (.zip)
+
+## Apply
+```bash
+git checkout -b overlay-v100
+unzip -o ~/Downloads/ai-testing-overlay-v100.zip
+git add -A && git commit -m "v1.0.0 overlay: Test Builder UI (additive)"
+bash scripts/enable_ui_builder_v100.sh
+bash scripts/merge_readme_v100.sh
+```
+
+## Use
+Open **http://localhost:8080/ui/builder** (or **:8081** when behind OIDC proxy).
