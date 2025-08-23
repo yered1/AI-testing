@@ -34,8 +34,14 @@ from .routers import v2_reports_enhanced
 app.include_router(v2_reports_enhanced.router, tags=["reports"])
 # v1.2.0 brain v3 router
 from .routers import v3_brain
+from .routers import ui_brain, ui_pages, v3_brain_guarded
 app.include_router(v3_brain.router, tags=["brain-v3"])
 from orchestrator.routers.v3_brain_guarded import router as router_brain_guarded
 app.include_router(router_brain_guarded)
 from orchestrator.routers.ui_brain import router as router_ui_brain
 app.include_router(router_ui_brain)
+
+# auto-added by fix_bootstrap_includes_v141.py
+app.include_router(ui_brain.router)
+app.include_router(ui_pages.router)
+app.include_router(v3_brain_guarded.router)

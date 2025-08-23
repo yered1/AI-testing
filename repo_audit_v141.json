@@ -1,0 +1,16 @@
+{
+  "root": "/Users/yered/Documents/GitHub/AI-testing",
+  "counts": {
+    "files": 334,
+    "junk_candidates": 0,
+    "routers": 17,
+    "includes_found": 15,
+    "missing_includes": 3
+  },
+  "missing_includes": [
+    "ui_brain",
+    "ui_pages",
+    "v3_brain_guarded"
+  ],
+  "junk_candidates": []
+}

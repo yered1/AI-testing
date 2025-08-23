@@ -1,9 +1,9 @@
-tools:
-  nmap_tcp_top_1000:
-    cmd: "nmap -Pn --top-ports 1000 -T3 {args}"
-  ffuf_dirb:
-    cmd: "ffuf -mc 200,302 -t 50 {args}"
-  sqlmap_basic:
-    cmd: "sqlmap --batch {args}"
-  gobuster_dir:
-    cmd: "gobuster dir {args}"
+# Allowlisted tools; modify as needed. 'active: true' will require ALLOW_ACTIVE_SCAN=1
+ffuf_dirb:
+  active: false
+  cmd: "ffuf -u {{url}}/FUZZ -w /usr/share/wordlists/dirb/common.txt -o /tmp/ffuf.json -of json"
+  artifacts: ["/tmp/ffuf.json"]
+sqlmap_basic:
+  active: true
+  cmd: "sqlmap -u {{url}} --batch --answers=Y -o --output-dir=/tmp/sqlmap"
+  artifacts: ["/tmp/sqlmap/output/log"]
