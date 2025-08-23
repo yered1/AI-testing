@@ -1,48 +1,136 @@
-# ============================================
 # orchestrator/models/finding.py
-"""Security finding model"""
-
-from sqlalchemy import Column, String, DateTime, JSON, ForeignKey, Text, Enum, Float
+"""
+SQLAlchemy model for findings table
+"""
+from sqlalchemy import Column, String, Text, Float, Boolean, DateTime, ForeignKey, Integer
+from sqlalchemy.dialects.postgresql import JSONB, ARRAY
+from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func
-from .base import Base
-import uuid
-import enum
+from datetime import datetime
 
-class Severity(enum.Enum):
-    CRITICAL = "critical"
-    HIGH = "high"
-    MEDIUM = "medium"
-    LOW = "low"
-    INFO = "info"
-
-class FindingStatus(enum.Enum):
-    NEW = "new"
-    CONFIRMED = "confirmed"
-    FALSE_POSITIVE = "false_positive"
-    RESOLVED = "resolved"
+Base = declarative_base()
 
 class Finding(Base):
-    __tablename__ = "findings"
+    """Finding model for vulnerability tracking"""
+    __tablename__ = 'findings'
     
-    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    run_id = Column(String, ForeignKey("runs.id"), nullable=False)
-    job_id = Column(String, ForeignKey("jobs.id"))
+    # Primary fields
+    id = Column(String, primary_key=True)
+    tenant_id = Column(String, nullable=False, index=True)
+    run_id = Column(String, ForeignKey('runs.id'), nullable=False, index=True)
+    engagement_id = Column(String, ForeignKey('engagements.id'), nullable=False, index=True)
+    job_id = Column(String, ForeignKey('jobs.id'), nullable=True)
+    agent_id = Column(String, ForeignKey('agents.id'), nullable=True)
+    
+    # Finding details
     title = Column(String, nullable=False)
-    description = Column(Text)
-    severity = Column(Enum(Severity), nullable=False)
-    status = Column(Enum(FindingStatus), default=FindingStatus.NEW)
-    vulnerability_type = Column(String)  # OWASP category, CWE, etc.
-    affected_component = Column(String)  # URL, file, endpoint, etc.
-    evidence = Column(JSON, default=dict)  # Screenshots, requests/responses, etc.
-    remediation = Column(Text)
-    cvss_score = Column(Float)
-    cvss_vector = Column(String)
-    references = Column(JSON, default=list)  # URLs to documentation
-    metadata = Column(JSON, default=dict)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    severity = Column(String, nullable=False, index=True)  # critical, high, medium, low, info
+    category = Column(String, nullable=False, index=True)
+    description = Column(Text, nullable=False)
+    
+    # Evidence and affected resources
+    evidence = Column(JSONB, nullable=True)
+    affected_hosts = Column(ARRAY(String), nullable=True)
+    affected_urls = Column(ARRAY(String), nullable=True)
+    
+    # Vulnerability identifiers
+    cve_ids = Column(ARRAY(String), nullable=True)
+    cwe_ids = Column(ARRAY(String), nullable=True)
+    owasp_category = Column(String, nullable=True)
+    cvss_vector = Column(String, nullable=True)
+    cvss_score = Column(Float, nullable=True)
+    
+    # Remediation
+    remediation = Column(Text, nullable=True)
+    references = Column(ARRAY(String), nullable=True)
+    
+    # Status tracking
+    false_positive = Column(Boolean, default=False, nullable=False)
+    duplicate_of = Column(String, ForeignKey('findings.id'), nullable=True)
+    status = Column(String, default='open', nullable=False, index=True)  # open, in_progress, resolved, accepted, false_positive
+    hash = Column(String, nullable=False, index=True)  # For deduplication
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
     # Relationships
     run = relationship("Run", back_populates="findings")
+    engagement = relationship("Engagement", back_populates="findings")
     job = relationship("Job", back_populates="findings")
+    agent = relationship("Agent", back_populates="findings")
+    duplicate_findings = relationship("Finding", backref="original_finding", remote_side=[id])
+    comments = relationship("FindingComment", back_populates="finding", cascade="all, delete-orphan")
+    
+    def to_dict(self):
+        """Convert finding to dictionary"""
+        return {
+            'id': self.id,
+            'tenant_id': self.tenant_id,
+            'run_id': self.run_id,
+            'engagement_id': self.engagement_id,
+            'job_id': self.job_id,
+            'agent_id': self.agent_id,
+            'title': self.title,
+            'severity': self.severity,
+            'category': self.category,
+            'description': self.description,
+            'evidence': self.evidence,
+            'affected_hosts': self.affected_hosts,
+            'affected_urls': self.affected_urls,
+            'cve_ids': self.cve_ids,
+            'cwe_ids': self.cwe_ids,
+            'owasp_category': self.owasp_category,
+            'cvss_vector': self.cvss_vector,
+            'cvss_score': self.cvss_score,
+            'remediation': self.remediation,
+            'references': self.references,
+            'false_positive': self.false_positive,
+            'duplicate_of': self.duplicate_of,
+            'status': self.status,
+            'hash': self.hash,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+    
+    def calculate_risk_score(self):
+        """Calculate risk score based on severity and CVSS"""
+        severity_scores = {
+            'critical': 10,
+            'high': 8,
+            'medium': 5,
+            'low': 2,
+            'info': 1
+        }
+        
+        base_score = severity_scores.get(self.severity.lower(), 5)
+        
+        # Adjust based on CVSS if available
+        if self.cvss_score:
+            return (base_score + self.cvss_score) / 2
+        
+        return base_score
+
+
+class FindingComment(Base):
+    """Comments on findings for collaboration"""
+    __tablename__ = 'finding_comments'
+    
+    id = Column(String, primary_key=True)
+    finding_id = Column(String, ForeignKey('findings.id'), nullable=False, index=True)
+    tenant_id = Column(String, nullable=False)
+    user_id = Column(String, nullable=False)
+    comment = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    finding = relationship("Finding", back_populates="comments")
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'finding_id': self.finding_id,
+            'user_id': self.user_id,
+            'comment': self.comment,
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }
