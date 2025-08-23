@@ -34,3 +34,11 @@ jobs:
       - name: Print logs on fail
         if: failure()
         run: bash scripts/print_logs_on_fail_v156.sh
+      - name: Build orchestrator
+        run: docker compose -f infra/docker-compose.v2.yml build orchestrator
+      - name: Migrate DB (CI)
+        run: bash scripts/ci_migrate_v157.sh
+      - name: Bring up stack
+        run: bash scripts/ci_stack_up_v157.sh
+      - name: Wait for API
+        run: bash scripts/wait_for_api_v157.sh
