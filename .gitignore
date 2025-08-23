@@ -1,47 +1,123 @@
-# macOS / Python / Node junk
-__MACOSX/
-.DS_Store
-*.pyc
+# Python
 __pycache__/
-.pytest_cache/
-.mypy_cache/
-ui/node_modules/
-ui/dist/
-dist/
+*.py[cod]
+*$py.class
+*.so
+.Python
 build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+.pytest_cache/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytype/
+
+# Virtual Environments
+venv/
+ENV/
+env/
+.venv/
+.ENV/
+.env/
+
+# IDEs
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+.project
+.pydevproject
+.settings/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.yarn-integrity
+
+# Environment files
 .env
-infra/auth/.env.auth
-infra/auth/.env.auth.local
-# === ai-testing v1.4.2 junk filters ===
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.mypy_cache/
-.tox/
-.coverage*
-htmlcov/
-.DS_Store
-__MACOSX/
-Thumbs.db
-.idea/
-.vscode/
-# Local auth configs
-infra/auth/.env.auth*
+.env.local
+.env.*.local
+*.env
 
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
 
-# Consolidated ignores
-__pycache__/
-*.py[cod]
-*.pyo
-.pytest_cache/
-.mypy_cache/
-.tox/
-.coverage*
-htmlcov/
+# OS files
 .DS_Store
-__MACOSX/
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
-.idea/
-.vscode/
-# Local auth secrets
-infra/auth/.env.auth*
+__MACOSX/
+
+# Docker
+.dockerignore
+
+# Application specific
+evidence/
+uploads/
+temp/
+tmp/
+backup_*/
+*.backup
+*.bak
+*.orig
+
+# Security
+*.key
+*.pem
+*.crt
+*.p12
+secrets/
+credentials/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+migrations/versions/*.pyc
+
+# Archives
+*.zip
+*.tar
+*.tar.gz
+*.rar
+*.7z
+
+# Reports
+reports/*.pdf
+reports/*.html
+exports/

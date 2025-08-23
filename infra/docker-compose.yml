@@ -1,35 +1,134 @@
+# Main Docker Compose Configuration
+# Use with profiles: docker compose --profile [profile] up
+
+version: '3.8'
+
+x-common-variables: &common-variables
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  TZ: ${TZ:-UTC}
+
 services:
+  # Core Services
   db:
-    image: postgres:15
+    image: postgres:15-alpine
+    profiles: ["default", "full", "dev"]
     environment:
-      POSTGRES_USER: app
-      POSTGRES_PASSWORD: app
-      POSTGRES_DB: ai_testing
-    ports:
-      - "5432:5432"
+      POSTGRES_DB: ${DB_NAME:-ai_testing}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
     volumes:
-      - db_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    profiles: ["default", "full", "dev"]
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   orchestrator:
     build:
-      context: ../
-      dockerfile: infra/orchestrator.Dockerfile
-    ports:
-      - "8080:8080"
+      context: ../orchestrator
+      dockerfile: Dockerfile
+    profiles: ["default", "full", "dev"]
     environment:
-      - PYTHONUNBUFFERED=1
-      - DATABASE_URL=postgresql+psycopg://app:app@db:5432/ai_testing
-      - DEV_BYPASS_AUTH=true
-      - REQUIRE_MFA=false
-      - OIDC_ISSUER=
-      - OIDC_AUDIENCE=
-    depends_on:
-      - db
+      <<: *common-variables
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-ai_testing}
+      REDIS_URL: redis://redis:6379
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
+      ALLOW_ACTIVE_SCAN: ${ALLOW_ACTIVE_SCAN:-0}
+      EVIDENCE_DIR: ${EVIDENCE_DIR:-/evidence}
     volumes:
-      - ../catalog:/app/catalog
-      - ../schemas:/app/schemas
-      - ../policies:/app/policies
-      - ../orchestrator:/app/orchestrator
+      - evidence_data:/evidence
+      - ../orchestrator:/app:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "${API_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  opa:
+    image: openpolicyagent/opa:0.65.0
+    profiles: ["default", "full"]
+    command: ["run", "--server", "--addr", ":8181", "/policies"]
+    volumes:
+      - ../policies:/policies:ro
+    ports:
+      - "${OPA_PORT:-8181}:8181"
+
+  # UI Service
+  ui:
+    build:
+      context: ../ui
+      dockerfile: Dockerfile
+    profiles: ["full", "dev"]
+    environment:
+      API_URL: ${API_URL:-http://orchestrator:8080}
+    depends_on:
+      - orchestrator
+    ports:
+      - "${UI_PORT:-3000}:3000"
+
+  # Agent Services (use --profile agents to enable)
+  zap-agent:
+    build:
+      context: ../agents
+      dockerfile: Dockerfile.zap
+    profiles: ["agents", "full"]
+    environment:
+      <<: *common-variables
+      ORCHESTRATOR_URL: http://orchestrator:8080
+      AGENT_TOKEN: ${ZAP_AGENT_TOKEN}
+      ALLOW_ACTIVE_SCAN: ${ALLOW_ACTIVE_SCAN:-0}
+    depends_on:
+      - orchestrator
+
+  nuclei-agent:
+    build:
+      context: ../agents
+      dockerfile: Dockerfile.nuclei
+    profiles: ["agents", "full"]
+    environment:
+      <<: *common-variables
+      ORCHESTRATOR_URL: http://orchestrator:8080
+      AGENT_TOKEN: ${NUCLEI_AGENT_TOKEN}
+    depends_on:
+      - orchestrator
+
+  semgrep-agent:
+    build:
+      context: ../agents
+      dockerfile: Dockerfile.semgrep
+    profiles: ["agents", "full"]
+    environment:
+      <<: *common-variables
+      ORCHESTRATOR_URL: http://orchestrator:8080
+      AGENT_TOKEN: ${SEMGREP_AGENT_TOKEN}
+    depends_on:
+      - orchestrator
 
 volumes:
-  db_data:
+  postgres_data:
+  redis_data:
+  evidence_data:
+
+networks:
+  default:
+    name: ai_testing_network
