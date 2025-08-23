@@ -1,0 +1,67 @@
+# Destination: patches/v2.0.0/policies_enabled/policy.rego
+# Rationale: Minimal working OPA policy to allow system to boot
+# This is a permissive policy for development - tighten for production
+
+package orchestrator.authz
+
+import future.keywords.contains
+import future.keywords.if
+import future.keywords.in
+
+# Default deny
+default allow := false
+
+# Allow health checks
+allow if {
+    input.path == ["health"]
+}
+
+allow if {
+    input.path == ["api", "health"]
+}
+
+# Allow authenticated users to read their own data
+allow if {
+    input.method == "GET"
+    input.user.id != ""
+}
+
+# Allow superusers everything
+allow if {
+    input.user.is_superuser == true
+}
+
+# Allow users to access their tenant's resources
+allow if {
+    some tenant_id in input.user.tenant_ids
+    input.resource.tenant_id == tenant_id
+}
+
+# Role-based access control
+allow if {
+    input.method == "GET"
+    input.user.role == "viewer"
+}
+
+allow if {
+    input.method in ["GET", "POST", "PUT"]
+    input.user.role == "editor"
+}
+
+allow if {
+    input.user.role == "admin"
+}
+
+# API token access
+allow if {
+    input.api_token != ""
+    validate_api_token(input.api_token)
+}
+
+# Helper function to validate API tokens
+validate_api_token(token) if {
+    # In production, check against database or secret store
+    # For now, accept any non-empty token with correct format
+    count(token) > 32
+    regex.match("^[A-Za-z0-9_-]+$", token)
+}

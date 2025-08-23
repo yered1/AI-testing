@@ -1,336 +1,195 @@
-"""
-OpenAI ChatGPT provider for AI Brain planning
-"""
+# Destination: patches/v2.0.0/orchestrator/brain/providers/openai_chat.py
+# Rationale: Implement OpenAI provider for automated test planning
+# Uses environment variables for configuration and safety
+
 import os
 import json
 import logging
-from typing import List, Dict, Any, Optional
-from openai import OpenAI
-from .base import BaseBrainProvider, PlanResult
+from typing import Dict, List, Optional, Any
+from dataclasses import dataclass
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-class OpenAIBrainProvider(BaseBrainProvider):
-    """OpenAI GPT-based brain provider"""
+@dataclass
+class PlanStep:
+    """Represents a single step in the test plan."""
+    order: int
+    action: str
+    tool: str
+    target: str
+    parameters: Dict[str, Any]
+    expected_outcome: str
+    risk_level: str = "low"
+
+
+class OpenAIProvider:
+    """OpenAI provider for generating test plans."""
     
     def __init__(self):
-        super().__init__()
-        self.name = "openai"
-        self.api_key = os.environ.get('OPENAI_API_KEY')
-        self.model = os.environ.get('OPENAI_MODEL', 'gpt-4o-mini')
-        self.base_url = os.environ.get('OPENAI_BASE_URL', 'https://api.openai.com/v1')
-        self.client = None
+        self.api_key = os.environ.get("OPENAI_API_KEY")
+        self.model = os.environ.get("OPENAI_MODEL", "gpt-4")
+        self.enabled = bool(self.api_key)
+        self.max_tokens = int(os.environ.get("OPENAI_MAX_TOKENS", "2000"))
+        self.temperature = float(os.environ.get("OPENAI_TEMPERATURE", "0.7"))
         
-        if self.api_key:
-            self.client = OpenAI(
-                api_key=self.api_key,
-                base_url=self.base_url
-            )
+        if not self.enabled:
+            logger.warning("OpenAI provider disabled - no API key found")
     
     def is_available(self) -> bool:
-        """Check if provider is configured and available"""
-        return self.client is not None
+        """Check if provider is available."""
+        return self.enabled
     
-    def generate_plan(
-        self,
-        engagement: Dict[str, Any],
-        catalog: Dict[str, Any],
-        context: Optional[Dict[str, Any]] = None
-    ) -> PlanResult:
-        """Generate test plan using OpenAI"""
-        
-        if not self.is_available():
-            return PlanResult(
-                success=False,
-                error="OpenAI provider not configured"
-            )
+    async def generate_plan(self, 
+                           engagement_data: Dict[str, Any],
+                           context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Generate a test plan based on engagement data."""
+        if not self.enabled:
+            raise RuntimeError("OpenAI provider is not configured")
         
         try:
-            # Build the prompt
-            prompt = self._build_planning_prompt(engagement, catalog, context)
-            
+            import openai
+            from openai import AsyncOpenAI
+        except ImportError:
+            raise RuntimeError("openai package not installed. Run: pip install openai")
+        
+        client = AsyncOpenAI(api_key=self.api_key)
+        
+        # Build the prompt
+        prompt = self._build_prompt(engagement_data, context)
+        
+        try:
             # Call OpenAI API
-            response = self.client.chat.completions.create(
+            response = await client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {
-                        "role": "system",
-                        "content": """You are an expert penetration testing planner. 
-                        Generate comprehensive test plans based on engagement parameters.
-                        Always return valid JSON with a 'tests' array containing test IDs from the catalog.
-                        Include 'approval_required' boolean for intrusive tests.
-                        Be thorough but avoid redundancy."""
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
+                    {"role": "system", "content": self._get_system_prompt()},
+                    {"role": "user", "content": prompt}
                 ],
-                temperature=0.7,
-                max_tokens=2000,
+                max_tokens=self.max_tokens,
+                temperature=self.temperature,
                 response_format={"type": "json_object"}
             )
             
-            # Parse response
-            result_text = response.choices[0].message.content
-            plan_data = json.loads(result_text)
+            # Parse the response
+            plan_json = json.loads(response.choices[0].message.content)
             
-            # Validate and structure the plan
-            tests = []
-            for test_entry in plan_data.get('tests', []):
-                if isinstance(test_entry, str):
-                    test_id = test_entry
-                    params = {}
-                    approval = False
-                elif isinstance(test_entry, dict):
-                    test_id = test_entry.get('id')
-                    params = test_entry.get('params', {})
-                    approval = test_entry.get('approval_required', False)
-                else:
-                    continue
-                
-                # Verify test exists in catalog
-                if self._test_exists_in_catalog(test_id, catalog):
-                    tests.append({
-                        'test_id': test_id,
-                        'params': params,
-                        'approval_required': approval,
-                        'priority': test_entry.get('priority', 'medium') if isinstance(test_entry, dict) else 'medium'
-                    })
+            # Validate and enhance the plan
+            plan = self._validate_plan(plan_json, engagement_data)
             
-            # Calculate risk tier
-            risk_tier = self._calculate_risk_tier(tests, catalog)
-            
-            # Get reasoning if provided
-            reasoning = plan_data.get('reasoning', 'Plan generated based on engagement parameters and best practices')
-            
-            return PlanResult(
-                success=True,
-                tests=tests,
-                risk_tier=risk_tier,
-                reasoning=reasoning,
-                metadata={
-                    'provider': 'openai',
-                    'model': self.model,
-                    'total_tests': len(tests)
-                }
-            )
+            return plan
             
         except Exception as e:
-            logger.error(f"OpenAI planning failed: {e}")
-            return PlanResult(
-                success=False,
-                error=str(e)
-            )
+            logger.error(f"OpenAI API error: {str(e)}")
+            raise RuntimeError(f"Failed to generate plan: {str(e)}")
     
-    def enrich_findings(
-        self,
-        findings: List[Dict[str, Any]],
-        context: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
-        """Enrich findings with AI analysis"""
+    def _get_system_prompt(self) -> str:
+        """Get the system prompt for plan generation."""
+        return """You are an expert security testing orchestrator. Generate comprehensive test plans 
+        for security assessments. Your plans should be:
+        1. Methodical and risk-aware (start with reconnaissance, escalate carefully)
+        2. Tool-specific (use appropriate tools for each task)
+        3. Measurable (clear success criteria)
+        4. Safe (respect scope boundaries, avoid destructive actions)
         
-        if not self.is_available():
-            return {'error': 'OpenAI provider not configured'}
-        
-        try:
-            # Build findings summary
-            findings_summary = self._summarize_findings(findings)
-            
-            prompt = f"""Analyze these penetration test findings and provide:
-1. Executive summary (2-3 paragraphs)
-2. Risk assessment and business impact
-3. Prioritized remediation roadmap
-4. Key attack vectors identified
-
-Findings summary:
-{json.dumps(findings_summary, indent=2)}
-
-Context:
-- Total findings: {len(findings)}
-- Critical: {findings_summary.get('critical_count', 0)}
-- High: {findings_summary.get('high_count', 0)}
-"""
-            
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a senior security analyst preparing an executive report."
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                temperature=0.5,
-                max_tokens=1500
-            )
-            
-            analysis = response.choices[0].message.content
-            
-            # Try to extract structured sections
-            sections = self._parse_analysis_sections(analysis)
-            
-            return {
-                'success': True,
-                'analysis': analysis,
-                'sections': sections,
-                'provider': 'openai',
-                'model': self.model
-            }
-            
-        except Exception as e:
-            logger.error(f"OpenAI enrichment failed: {e}")
-            return {'error': str(e)}
-    
-    def suggest_next_steps(
-        self,
-        current_findings: List[Dict[str, Any]],
-        completed_tests: List[str],
-        catalog: Dict[str, Any]
-    ) -> List[Dict[str, Any]]:
-        """Suggest next tests based on current findings"""
-        
-        if not self.is_available():
-            return []
-        
-        try:
-            # Build context
-            findings_summary = self._summarize_findings(current_findings)
-            available_tests = self._get_available_tests(completed_tests, catalog)
-            
-            prompt = f"""Based on these findings, suggest the next most valuable tests to run.
-
-Current findings:
-{json.dumps(findings_summary, indent=2)}
-
-Completed tests: {', '.join(completed_tests)}
-
-Available tests: {', '.join(available_tests[:20])}
-
-Return a JSON object with a 'suggestions' array containing test IDs and reasoning."""
-            
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a penetration testing expert suggesting follow-up tests."
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                temperature=0.7,
-                max_tokens=1000,
-                response_format={"type": "json_object"}
-            )
-            
-            result = json.loads(response.choices[0].message.content)
-            suggestions = []
-            
-            for suggestion in result.get('suggestions', []):
-                if isinstance(suggestion, dict):
-                    test_id = suggestion.get('test_id')
-                    if test_id and test_id in available_tests:
-                        suggestions.append({
-                            'test_id': test_id,
-                            'reasoning': suggestion.get('reasoning', ''),
-                            'priority': suggestion.get('priority', 'medium')
-                        })
-            
-            return suggestions[:5]  # Limit to top 5 suggestions
-            
-        except Exception as e:
-            logger.error(f"OpenAI suggestions failed: {e}")
-            return []
-    
-    def _build_planning_prompt(
-        self,
-        engagement: Dict[str, Any],
-        catalog: Dict[str, Any],
-        context: Optional[Dict[str, Any]]
-    ) -> str:
-        """Build the planning prompt for OpenAI"""
-        
-        # Extract key information
-        engagement_type = engagement.get('type', 'external')
-        scope = engagement.get('scope', {})
-        targets = scope.get('targets', [])
-        
-        # Get relevant tests from catalog
-        relevant_tests = self._filter_relevant_tests(engagement_type, catalog)
-        
-        prompt = f"""Create a penetration testing plan for this engagement:
-
-Engagement Type: {engagement_type}
-Targets: {json.dumps(targets, indent=2)}
-
-Available Tests (ID -> Description):
-"""
-        
-        for test_id, test_info in relevant_tests.items():
-            prompt += f"- {test_id}: {test_info.get('description', test_id)}\n"
-        
-        prompt += """
-Generate a comprehensive test plan as JSON with this structure:
-{
-    "tests": [
+        Output valid JSON with this structure:
         {
-            "id": "test_id_from_catalog",
-            "params": {"any": "needed parameters"},
-            "approval_required": true/false,
-            "priority": "critical/high/medium/low"
-        }
-    ],
-    "reasoning": "explanation of the plan"
-}
-
-Consider:
-1. Start with reconnaissance and discovery
-2. Progress to vulnerability identification
-3. Include exploitation only if appropriate
-4. Mark intrusive tests as requiring approval
-5. Ensure logical test progression
-"""
+            "name": "Plan name",
+            "description": "Plan description",
+            "risk_level": "low|medium|high",
+            "estimated_duration": "duration in hours",
+            "phases": [
+                {
+                    "name": "Phase name",
+                    "order": 1,
+                    "steps": [
+                        {
+                            "order": 1,
+                            "action": "What to do",
+                            "tool": "Tool to use",
+                            "target": "Target system/URL",
+                            "parameters": {"key": "value"},
+                            "expected_outcome": "What we expect",
+                            "risk_level": "low|medium|high"
+                        }
+                    ]
+                }
+            ],
+            "dependencies": ["required tools/agents"],
+            "approval_required": true/false
+        }"""
+    
+    def _build_prompt(self, engagement_data: Dict[str, Any], context: Dict[str, Any] = None) -> str:
+        """Build the prompt for plan generation."""
+        scope = engagement_data.get("scope", {})
+        
+        prompt = f"""Generate a security test plan for the following engagement:
+        
+        Engagement: {engagement_data.get('name', 'Security Assessment')}
+        Description: {engagement_data.get('description', 'N/A')}
+        
+        Scope:
+        - Targets: {json.dumps(scope.get('targets', []), indent=2)}
+        - Included: {json.dumps(scope.get('included', []), indent=2)}
+        - Excluded: {json.dumps(scope.get('excluded', []), indent=2)}
+        - Constraints: {json.dumps(scope.get('constraints', {}), indent=2)}
+        """
         
         if context:
-            prompt += f"\nAdditional context: {json.dumps(context, indent=2)}"
+            prompt += f"\n\nAdditional Context:\n{json.dumps(context, indent=2)}"
+        
+        prompt += "\n\nGenerate a comprehensive test plan following security best practices."
         
         return prompt
     
-    def _filter_relevant_tests(
-        self,
-        engagement_type: str,
-        catalog: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Filter catalog tests relevant to engagement type"""
+    def _validate_plan(self, plan_json: Dict[str, Any], engagement_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate and enhance the generated plan."""
+        # Ensure required fields
+        plan_json.setdefault("name", f"Auto-generated plan for {engagement_data.get('name', 'engagement')}")
+        plan_json.setdefault("created_at", datetime.utcnow().isoformat())
+        plan_json.setdefault("provider", "openai")
+        plan_json.setdefault("model", self.model)
         
-        relevant = {}
-        tests = catalog.get('tests', {})
+        # Validate phases
+        if "phases" not in plan_json:
+            plan_json["phases"] = [self._get_default_phase()]
         
-        # Map engagement types to test categories
-        type_mapping = {
-            'web': ['web', 'api', 'authentication'],
-            'network': ['network', 'infrastructure', 'service'],
-            'mobile': ['mobile', 'api'],
-            'cloud': ['cloud', 'infrastructure'],
-            'code': ['code', 'static_analysis'],
-            'internal': ['network', 'infrastructure', 'privilege_escalation', 'lateral_movement'],
-            'external': ['web', 'network', 'discovery']
+        # Ensure phase ordering
+        for i, phase in enumerate(plan_json["phases"]):
+            phase.setdefault("order", i + 1)
+            
+            # Ensure step ordering
+            for j, step in enumerate(phase.get("steps", [])):
+                step.setdefault("order", j + 1)
+                step.setdefault("risk_level", "low")
+        
+        # Add metadata
+        plan_json["metadata"] = {
+            "generator": "openai_provider",
+            "version": "1.0.0",
+            "engagement_id": engagement_data.get("id"),
+            "created_by": "ai_brain"
         }
         
-        relevant_categories = type_mapping.get(engagement_type, [])
-        
-        for test_id, test_info in tests.items():
-            category = test_info.get('category', '').lower()
-            if any(cat in category for cat in relevant_categories):
-                relevant[test_id] = test_info
-            # Also include if engagement type in test tags
-            elif engagement_type in test_info.get('tags', []):
-                relevant[test_id] = test_info
-        
-        return relevant
+        return plan_json
+    
+    def _get_default_phase(self) -> Dict[str, Any]:
+        """Get a default phase if none provided."""
+        return {
+            "name": "Reconnaissance",
+            "order": 1,
+            "steps": [
+                {
+                    "order": 1,
+                    "action": "Perform port scan",
+                    "tool": "nmap",
+                    "target": "target_host",
+                    "parameters": {
+                        "ports": "1-65535",
+                        "scan_type": "SYN"
+                    },
+                    "expected_outcome": "List of open ports and services",
+                    "risk_level": "low"
+                }
+            ]
+        }

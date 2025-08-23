@@ -1,0 +1,40 @@
+# Destination: patches/v2.0.0/infra/docker-compose.opa.compat.yml
+# Rationale: Override OPA image to a stable, compatible version and fix volume mounts
+# Use with: docker-compose -f docker-compose.yml -f docker-compose.opa.compat.yml up
+
+version: '3.8'
+
+services:
+  opa:
+    # Override with stable OPA version
+    image: openpolicyagent/opa:0.65.0
+    command: 
+      - "run"
+      - "--server"
+      - "--addr=0.0.0.0:8181"
+      - "--log-level=info"
+      - "--set=decision_logs.console=true"
+      - "/policies"
+    ports:
+      - "8181:8181"
+    volumes:
+      # Mount the enabled policies directory
+      - ./policies_enabled:/policies:ro
+      # Optional: mount data files
+      - ./opa_data:/data:ro
+    environment:
+      - OPA_LOG_LEVEL=info
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8181/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - orchestrator_network
+
+networks:
+  orchestrator_network:
+    external: true
+    name: orchestrator_network

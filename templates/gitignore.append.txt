@@ -1,0 +1,141 @@
+# Destination: patches/v2.0.0/templates/gitignore.append
+# Rationale: Ensure common development artifacts are ignored by git
+# Append these lines to the existing .gitignore file
+
+# === Python ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.ruff_cache/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# === Virtual Environments ===
+venv/
+ENV/
+env/
+.venv/
+.virtualenv/
+
+# === macOS ===
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+__MACOSX/
+
+# === Windows ===
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msm
+*.msp
+*.lnk
+
+# === Linux ===
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# === Node.js ===
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+.npm
+.yarn-integrity
+.cache/
+
+# === Docker ===
+.dockerignore
+docker-compose.override.yml
+*.log
+
+# === IDEs ===
+.vscode/
+.idea/
+*.swp
+*.swo
+*.swn
+*.bak
+.project
+.classpath
+.settings/
+*.sublime-workspace
+*.sublime-project
+
+# === Security ===
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+*.crt
+*.p12
+secrets/
+credentials/
+
+# === Testing ===
+test-results/
+coverage/
+*.lcov
+.nyc_output/
+
+# === Logs ===
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# === Temporary files ===
+tmp/
+temp/
+*.tmp
+*.temp
