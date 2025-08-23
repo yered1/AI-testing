@@ -1,9 +1,0 @@
-# Allowlisted tools; modify as needed. 'active: true' will require ALLOW_ACTIVE_SCAN=1
-ffuf_dirb:
-  active: false
-  cmd: "ffuf -u {{url}}/FUZZ -w /usr/share/wordlists/dirb/common.txt -o /tmp/ffuf.json -of json"
-  artifacts: ["/tmp/ffuf.json"]
-sqlmap_basic:
-  active: true
-  cmd: "sqlmap -u {{url}} --batch --answers=Y -o --output-dir=/tmp/sqlmap"
-  artifacts: ["/tmp/sqlmap/output/log"]

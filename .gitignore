@@ -1,63 +1,36 @@
 # Python
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
+*.pyc
+*.pyo
+*.pyd
 .Python
-build/
-dist/
+*.so
+*.egg
 *.egg-info/
+dist/
+build/
 .pytest_cache/
-.coverage
-.tox/
-.mypy_cache/
-.ruff_cache/
 
-# Virtual Environments
-venv/
-.venv/
-env/
-.env/
-
-# Environment files
+# Environment
 .env
-.env.local
-*.env
-!.env.example
+.venv
+venv/
+ENV/
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
-*~
 
 # OS
 .DS_Store
 Thumbs.db
-__MACOSX/
-
-# Logs
-*.log
-logs/
 
 # Docker
-.dockerignore
+*.log
 
 # Application
 evidence/
-uploads/
-temp/
-tmp/
-backup*/
-
-# Node
-node_modules/
-npm-debug.log*
-yarn-error.log*
-
-# Security
-*.key
-*.pem
-*.crt
-secrets/
+reports/
+*.db
