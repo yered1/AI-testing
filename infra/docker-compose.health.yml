@@ -1,8 +1,0 @@
-services:
-  db:
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d aitest || exit 1"]
-      interval: 2s
-      timeout: 2s
-      retries: 60
-      start_period: 2s

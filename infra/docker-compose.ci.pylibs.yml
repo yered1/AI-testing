@@ -1,5 +1,0 @@
-services:
-  orchestrator:
-    build:
-      context: ../
-      dockerfile: infra/orchestrator.ci.Dockerfile

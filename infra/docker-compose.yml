@@ -1,17 +1,18 @@
-# Main Docker Compose Configuration
-# Use with profiles: docker compose --profile [profile] up
+# AI-Testing Platform - Main Docker Compose Configuration
+# Usage: docker compose up -d
+# Profiles: default, agents, full, dev
 
 version: '3.8'
 
-x-common-variables: &common-variables
+x-common-env: &common-env
   LOG_LEVEL: ${LOG_LEVEL:-INFO}
   TZ: ${TZ:-UTC}
 
 services:
-  # Core Services
+  # ============= CORE SERVICES =============
   db:
     image: postgres:15-alpine
-    profiles: ["default", "full", "dev"]
+    container_name: ai_testing_db
     environment:
       POSTGRES_DB: ${DB_NAME:-ai_testing}
       POSTGRES_USER: ${DB_USER:-postgres}
@@ -19,14 +20,16 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - ai_testing
 
   redis:
     image: redis:7-alpine
-    profiles: ["default", "full", "dev"]
+    container_name: ai_testing_redis
     command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
@@ -35,22 +38,30 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - ai_testing
 
   orchestrator:
     build:
       context: ../orchestrator
       dockerfile: Dockerfile
-    profiles: ["default", "full", "dev"]
+    container_name: ai_testing_orchestrator
     environment:
-      <<: *common-variables
+      <<: *common-env
       DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-ai_testing}
       REDIS_URL: redis://redis:6379
       SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
       ALLOW_ACTIVE_SCAN: ${ALLOW_ACTIVE_SCAN:-0}
       EVIDENCE_DIR: ${EVIDENCE_DIR:-/evidence}
+      OPA_URL: ${OPA_URL:-http://opa:8181}
+      # AI Providers (optional)
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      AZURE_OPENAI_KEY: ${AZURE_OPENAI_KEY:-}
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
     volumes:
       - evidence_data:/evidence
-      - ../orchestrator:/app:ro
+      - ../orchestrator:/app
     depends_on:
       db:
         condition: service_healthy
@@ -63,21 +74,26 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    networks:
+      - ai_testing
 
   opa:
     image: openpolicyagent/opa:0.65.0
-    profiles: ["default", "full"]
+    container_name: ai_testing_opa
     command: ["run", "--server", "--addr", ":8181", "/policies"]
     volumes:
       - ../policies:/policies:ro
     ports:
       - "${OPA_PORT:-8181}:8181"
+    networks:
+      - ai_testing
 
-  # UI Service
+  # ============= UI SERVICE (Profile: full, dev) =============
   ui:
     build:
       context: ../ui
       dockerfile: Dockerfile
+    container_name: ai_testing_ui
     profiles: ["full", "dev"]
     environment:
       API_URL: ${API_URL:-http://orchestrator:8080}
@@ -85,44 +101,55 @@ services:
       - orchestrator
     ports:
       - "${UI_PORT:-3000}:3000"
+    networks:
+      - ai_testing
 
-  # Agent Services (use --profile agents to enable)
+  # ============= AGENTS (Profile: agents, full) =============
   zap-agent:
     build:
-      context: ../agents
-      dockerfile: Dockerfile.zap
+      context: ../agents/zap_agent
+      dockerfile: Dockerfile
+    container_name: ai_testing_zap
     profiles: ["agents", "full"]
     environment:
-      <<: *common-variables
+      <<: *common-env
       ORCHESTRATOR_URL: http://orchestrator:8080
       AGENT_TOKEN: ${ZAP_AGENT_TOKEN}
       ALLOW_ACTIVE_SCAN: ${ALLOW_ACTIVE_SCAN:-0}
     depends_on:
       - orchestrator
+    networks:
+      - ai_testing
 
   nuclei-agent:
     build:
-      context: ../agents
-      dockerfile: Dockerfile.nuclei
+      context: ../agents/nuclei_agent
+      dockerfile: Dockerfile
+    container_name: ai_testing_nuclei
     profiles: ["agents", "full"]
     environment:
-      <<: *common-variables
+      <<: *common-env
       ORCHESTRATOR_URL: http://orchestrator:8080
       AGENT_TOKEN: ${NUCLEI_AGENT_TOKEN}
     depends_on:
       - orchestrator
+    networks:
+      - ai_testing
 
   semgrep-agent:
     build:
-      context: ../agents
-      dockerfile: Dockerfile.semgrep
+      context: ../agents/semgrep_agent
+      dockerfile: Dockerfile
+    container_name: ai_testing_semgrep
     profiles: ["agents", "full"]
     environment:
-      <<: *common-variables
+      <<: *common-env
       ORCHESTRATOR_URL: http://orchestrator:8080
       AGENT_TOKEN: ${SEMGREP_AGENT_TOKEN}
     depends_on:
       - orchestrator
+    networks:
+      - ai_testing
 
 volumes:
   postgres_data:
@@ -130,5 +157,5 @@ volumes:
   evidence_data:
 
 networks:
-  default:
-    name: ai_testing_network
+  ai_testing:
+    driver: bridge

@@ -1,7 +1,0 @@
-services:
-  reporter:
-    build:
-      context: ../
-      dockerfile: infra/reporter.Dockerfile
-    ports:
-      - "8082:8080"

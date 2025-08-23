@@ -1,4 +1,0 @@
-services:
-  orchestrator:
-    environment:
-      - SIMULATE_PROGRESS=true
