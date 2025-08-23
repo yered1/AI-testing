@@ -18,7 +18,7 @@ jobs:
 
       - name: Start stack (API + DB + OPA) with CI overrides
         run: |
-          docker compose -f infra/docker-compose.v2.yml -f infra/docker-compose.evidence.yml -f infra/docker-compose.ci.yml up -d --build
+          docker compose -f infra/docker-compose.v2.yml -f infra/docker-compose.evidence.yml -f infra/docker-compose.ci.yml -f infra/docker-compose.opa.compat.yml up -d --build
           echo "Waiting for API to be ready..."
           for i in $(seq 1 60); do
             if curl -fsS http://localhost:8080/health >/dev/null; then echo "API is up"; break; fi
@@ -44,6 +44,6 @@ jobs:
       - name: Show logs on failure
         if: failure()
         run: |
-          docker compose -f infra/docker-compose.v2.yml logs orchestrator || true
+          docker compose -f infra/docker-compose.v2.yml -f infra/docker-compose.opa.compat.yml logs orchestrator || true
           docker compose -f infra/docker-compose.v2.yml logs db || true
-          docker compose -f infra/docker-compose.v2.yml logs opa || true
+          docker compose -f infra/docker-compose.v2.yml -f infra/docker-compose.opa.compat.yml logs opa || true
