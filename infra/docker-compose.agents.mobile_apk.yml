@@ -1,0 +1,13 @@
+
+services:
+  agent_mobile_apk:
+    build:
+      context: ../
+      dockerfile: infra/agent.mobile_apk.Dockerfile
+    environment:
+      - ORCH_URL=http://orchestrator:8080
+      - TENANT_ID=t_demo
+      - AGENT_NAME=mobile_apk1
+      - AGENT_TOKEN=${AGENT_TOKEN:-}
+    depends_on:
+      - orchestrator

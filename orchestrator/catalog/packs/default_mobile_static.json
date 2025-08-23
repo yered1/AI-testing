@@ -1,0 +1,7 @@
+{
+  "id": "default_mobile_static",
+  "title": "Default \u2014 Mobile Static",
+  "tests": [
+    "mobile_apk_static_default"
+  ]
+}

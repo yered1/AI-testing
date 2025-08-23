@@ -24,3 +24,6 @@ from .routers import ui_code
 app.include_router(v2_artifacts_downloads.router, tags=["artifacts"])
 
 app.include_router(ui_code.router, tags=["ui"])
+
+from .routers import ui_mobile
+app.include_router(ui_mobile.router, tags=["ui"])
