@@ -57,7 +57,7 @@ ADAPTERS = {"nuclei_default": adapter_nuclei_default}
 
 def lease():
     try:
-        r = requests.post(f"{ORCH}/v2/agents/lease2", headers={**hdr(), "Content-Type":"application/json"}, timeout=40)
+        r = requests.post(f"{ORCH}/v2/agents/lease2", headers={**hdr(), "Content-Type":"application/json"}, json={"kinds":["nuclei"]}, timeout=40)
         if r.status_code == 204: return None
         if r.status_code == 404: raise Exception("lease2 not found")
         r.raise_for_status()

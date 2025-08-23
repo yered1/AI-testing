@@ -2,7 +2,7 @@
 import os, time, json, uuid, requests, sys, tempfile, re
 from typing import Dict, Any
 
-ORCH = os.environ.get("ORCH_URL","http://orchestrator:8080")
+ORCH = os.environ.get("ORCH_URL","http://localhost:8080")
 TENANT = os.environ.get("TENANT_ID","t_demo")
 AGENT_NAME = os.environ.get("AGENT_NAME", f"mobile-apk-{uuid.uuid4().hex[:6]}")
 ENROLL_TOKEN = os.environ.get("AGENT_TOKEN", "")

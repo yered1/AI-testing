@@ -106,3 +106,11 @@ export async function uploadArtifact(runId: string, file: File, findingId?: stri
 export function reportURL(runId: string, fmt: 'json'|'md'|'html') {
   return `${ORCH_URL}/v2/reports/run/${runId}.${fmt}`;
 }
+
+
+export async function getArtifactsIndex(runId: string) {
+  const r = await fetch(`${ORCH_URL}/v2/runs/${runId}/artifacts/index.json`, { headers: headers() });
+  if (r.status === 404) throw new Error('run not found');
+  if (!r.ok) throw new Error(`failed to load artifacts index: ${r.status}`);
+  return r.json();
+}

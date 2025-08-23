@@ -1,3 +1,4 @@
+from . import logging_setup
 from .app_v2 import app
 from .routers import ui_brain
 from .routers import ui_builder
@@ -8,6 +9,7 @@ from .routers import v2_agents_artifacts
 from .routers import v2_agents_bus
 from .routers import v2_agents_bus_lease2
 from .routers import v2_artifacts_downloads
+from .routers import v2_artifacts_index
 from .routers import v2_brain
 from .routers import v2_findings_reports
 from .routers import v2_listings
@@ -46,6 +48,7 @@ app.include_router(v2_agents_artifacts.router, tags=['agents', 'artifacts'])
 app.include_router(v2_agents_bus.router, tags=['agents'])
 app.include_router(v2_agents_bus_lease2.router, tags=['agents'])
 app.include_router(v2_artifacts_downloads.router, tags=['artifacts'])
+app.include_router(v2_artifacts_index.router, tags=['artifacts'])
 app.include_router(v2_brain.router, tags=['brain'])
 app.include_router(v2_findings_reports.router, tags=['findings', 'artifacts', 'reports'])
 app.include_router(v2_listings.router, tags=['listings'])
