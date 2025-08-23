@@ -30,3 +30,5 @@ app.include_router(ui_mobile.router, tags=["ui"])
 from .routers import ui_builder
 
 app.include_router(ui_builder.router, tags=["ui"])\ntry:\n    ui_builder.mount_static(app)\nexcept Exception:\n    pass\n
+from .routers import v2_reports_enhanced
+app.include_router(v2_reports_enhanced.router, tags=["reports"])

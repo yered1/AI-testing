@@ -1,0 +1,4 @@
+services:
+  orchestrator:
+    environment:
+      - REPORTER_URL=${REPORTER_URL:-http://reporter:8080}
