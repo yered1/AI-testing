@@ -1,0 +1,59 @@
+name: CI-v2
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-migrate-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Build orchestrator image (for migration run)
+        run: |
+          docker compose -f infra/docker-compose.v2.yml build orchestrator
+
+      - name: Start DB and OPA (compat image)
+        run: |
+          docker compose -f infra/docker-compose.v2.yml -f infra/docker-compose.opa.compat.yml up -d db opa
+          echo "Waiting for DB to be healthy..."
+          for i in $(seq 1 60); do
+            if docker compose -f infra/docker-compose.v2.yml exec -T db pg_isready -U postgres >/dev/null 2>&1; then
+              echo "DB is healthy"; break
+            fi
+            sleep 2
+          done
+
+      - name: Run DB migrations (one-off container)
+        run: |
+          docker compose -f infra/docker-compose.v2.yml run --rm orchestrator alembic upgrade head
+
+      - name: Start API stack with CI overrides
+        run: |
+          docker compose -f infra/docker-compose.v2.yml -f infra/docker-compose.evidence.yml -f infra/docker-compose.ci.yml -f infra/docker-compose.opa.compat.yml -f infra/docker-compose.health.yml up -d
+          echo "Waiting for API to be ready..."
+          bash scripts/wait_for_api_v152.sh http://localhost:8080/health 180
+
+      - name: Install test deps
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install requests
+
+      - name: Smoke test (Python)
+        env:
+          API: http://localhost:8080
+          TENANT: t_demo
+        run: |
+          python scripts/ci_smoke.py
+
+      - name: Show logs on failure
+        if: failure()
+        run: |
+          bash scripts/print_logs_on_fail_v152.sh
