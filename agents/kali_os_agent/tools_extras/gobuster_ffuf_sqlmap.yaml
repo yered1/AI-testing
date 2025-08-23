@@ -1,29 +1,4 @@
-# Allowlisted tools for the Kali OS agent
-nmap_tcp_top_1000:
-  cmd: "nmap -Pn --top-ports 1000 -T3 {{target}} -oN nmap_top1000.txt -oX nmap_top1000.xml"
-  active: true
-  timeout: 10800
-  artifacts: ["nmap_top1000.*"]
-
-ffuf_dirb:
-  cmd: "ffuf -u {{url}}/FUZZ -w {{wordlist}} -o ffuf.json -of json"
-  active: false
-  timeout: 7200
-  artifacts: ["ffuf.json"]
-
-gobuster_dir:
-  cmd: "gobuster dir -u {{url}} -w {{wordlist}} -o gobuster.txt"
-  active: false
-  timeout: 7200
-  artifacts: ["gobuster.txt"]
-
-sqlmap_basic:
-  cmd: "sqlmap -u {{url}} --batch --output-dir=sqlmap_out"
-  active: true
-  timeout: 10800
-  artifacts: ["sqlmap_out/**"]
-
-# == merged from tools_extras/gobuster_ffuf_sqlmap.yaml ==
+tools:
   gobuster_dns_safe:
     active: true
     timeout: 1200

@@ -1,11 +1,11 @@
 services:
   db:
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: aitest
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-aitest}
   orchestrator:
     environment:
-      - DATABASE_URL=postgresql+psycopg://postgres:postgres@db:5432/aitest
-      - DB_URL=postgresql+psycopg://postgres:postgres@db:5432/aitest
-      - DB_DSN=postgresql+psycopg://postgres:postgres@db:5432/aitest
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-aitest}}
+      DB_URL: ${DATABASE_URL:-postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-aitest}}
+      DB_DSN: ${DATABASE_URL:-postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-aitest}}

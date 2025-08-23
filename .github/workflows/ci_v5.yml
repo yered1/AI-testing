@@ -1,0 +1,36 @@
+name: CI v5 (build→db+opa→migrate→api→smoke)
+on:
+  push:
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build orchestrator image
+        run: |
+          docker compose -f infra/docker-compose.v2.yml build orchestrator
+
+      - name: Up DB+OPA and migrate (alembic with PYTHONPATH)
+        run: |
+          bash scripts/ci_migrate_v155.sh
+
+      - name: Bring up full stack
+        run: |
+          bash scripts/ci_stack_up_v155.sh
+
+      - name: Smoke test
+        run: |
+          python scripts/ci_smoke.py
+
+      - name: Print logs on fail
+        if: failure()
+        run: |
+          bash scripts/print_logs_on_fail_v155.sh

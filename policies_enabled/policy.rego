@@ -1,3 +1,3 @@
 package pentest.policy
 
-default allow = true
+default allow := true
