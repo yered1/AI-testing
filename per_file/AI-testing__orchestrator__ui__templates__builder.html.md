@@ -1,0 +1,136 @@
+# File: AI-testing/orchestrator/ui/templates/builder.html
+
+- Size: 2425 bytes
+- Kind: text
+- SHA256: 6841ce851293427e311ba8eb6c2f8079bcfbc81ec24bf7662db047b2b416a33a
+
+## Head (first 60 lines)
+
+```
+
+{% extends "base.html" %}
+{% block title %}Test Builder{% endblock %}
+{% block content %}
+<h1>Engagement Test Builder</h1>
+<p class="muted">Create an engagement, select tests/packs, set params, validate, create plan, and start a run.</p>
+
+<section class="panel">
+  <h3>1) Engagement</h3>
+  <div class="grid">
+    <label>Tenant ID <input id="tenant_id" placeholder="t_demo" /></label>
+    <label>Name <input id="eng_name" placeholder="demo-eng" /></label>
+    <label>Type
+      <select id="eng_type">
+        <option value="web">web</option>
+        <option value="network">network</option>
+        <option value="mobile">mobile</option>
+        <option value="code">code</option>
+      </select>
+    </label>
+  </div>
+  <div class="grid">
+    <label>Domains (comma) <input id="scope_domains" placeholder="example.com, app.example.com" /></label>
+    <label>CIDRs (comma) <input id="scope_cidrs" placeholder="10.0.0.0/24" /></label>
+  </div>
+  <button id="btn_create_eng">Create Engagement</button>
+  <span id="eng_id_view" class="badge"></span>
+</section>
+
+<section class="panel">
+  <h3>2) Catalog</h3>
+  <div id="catalog_loading">Loading catalog…</div>
+  <div class="grid-2" id="catalog_container" style="display:none;">
+    <div>
+      <h4>Tests</h4>
+      <div id="tests_list"></div>
+    </div>
+    <div>
+      <h4>Packs</h4>
+      <div id="packs_list"></div>
+    </div>
+  </div>
+</section>
+
+<section class="panel">
+  <h3>3) Params (optional)</h3>
+  <p class="muted">Click a selected test to edit params JSON. Leave empty for defaults.</p>
+  <div id="params_container"></div>
+</section>
+
+<section class="panel">
+  <h3>4) Validate → Plan → Run</h3>
+  <div class="grid">
+    <label>Risk Tier
+      <select id="risk_tier">
+        <option>safe_passive</option>
+        <option selected>safe_active</option>
+        <option>intrusive</option>
+      </select>
+    </label>
+```
+
+## Tail (last 60 lines)
+
+```
+      </select>
+    </label>
+  </div>
+  <div class="grid">
+    <label>Domains (comma) <input id="scope_domains" placeholder="example.com, app.example.com" /></label>
+    <label>CIDRs (comma) <input id="scope_cidrs" placeholder="10.0.0.0/24" /></label>
+  </div>
+  <button id="btn_create_eng">Create Engagement</button>
+  <span id="eng_id_view" class="badge"></span>
+</section>
+
+<section class="panel">
+  <h3>2) Catalog</h3>
+  <div id="catalog_loading">Loading catalog…</div>
+  <div class="grid-2" id="catalog_container" style="display:none;">
+    <div>
+      <h4>Tests</h4>
+      <div id="tests_list"></div>
+    </div>
+    <div>
+      <h4>Packs</h4>
+      <div id="packs_list"></div>
+    </div>
+  </div>
+</section>
+
+<section class="panel">
+  <h3>3) Params (optional)</h3>
+  <p class="muted">Click a selected test to edit params JSON. Leave empty for defaults.</p>
+  <div id="params_container"></div>
+</section>
+
+<section class="panel">
+  <h3>4) Validate → Plan → Run</h3>
+  <div class="grid">
+    <label>Risk Tier
+      <select id="risk_tier">
+        <option>safe_passive</option>
+        <option selected>safe_active</option>
+        <option>intrusive</option>
+      </select>
+    </label>
+  </div>
+  <div class="btnrow">
+    <button id="btn_validate">Validate Plan</button>
+    <span id="validate_out" class="muted"></span>
+  </div>
+  <div class="btnrow">
+    <button id="btn_create_plan" disabled>Create Plan</button>
+    <span id="plan_id_view" class="badge"></span>
+  </div>
+  <div class="btnrow">
+    <button id="btn_start_run" disabled>Start Run</button>
+    <span id="run_id_view" class="badge"></span>
+  </div>
+  <div id="quick_links" class="muted"></div>
+</section>
+
+<script src="/ui/static/builder.js"></script>
+{% endblock %}
+```
+
