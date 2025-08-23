@@ -1,0 +1,10 @@
+{
+  "id": "default_external_min",
+  "title": "Default \u2014 External Minimum",
+  "tests": [
+    "network_dnsx_resolve",
+    "web_httpx_probe",
+    "web_zap_baseline",
+    "web_nuclei_default"
+  ]
+}

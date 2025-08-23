@@ -1,0 +1,8 @@
+{
+  "id": "default_web_discovery",
+  "title": "Default \u2014 Web Discovery",
+  "tests": [
+    "network_dnsx_resolve",
+    "web_httpx_probe"
+  ]
+}

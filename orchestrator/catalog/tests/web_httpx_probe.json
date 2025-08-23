@@ -1,0 +1,18 @@
+{
+  "id": "web_httpx_probe",
+  "title": "Web \u2014 httpx Probe",
+  "category": "web",
+  "description": "Probe HTTP endpoints and collect status, titles, and detected technologies.",
+  "tool_adapter": "httpx_probe",
+  "params_schema": {
+    "type": "object",
+    "properties": {
+      "targets": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
