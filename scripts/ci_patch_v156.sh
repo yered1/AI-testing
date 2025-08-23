@@ -1,23 +1,12 @@
-name: CI v5 (build → migrate → api → smoke)
-
-on:
-  push:
-    branches: [ main, master ]
-  pull_request:
-
-jobs:
-  ci:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Login to Docker Hub (anon)
-        run: echo "using public pulls"
+#!/usr/bin/env bash
+set -Eeuo pipefail
+yml=".github/workflows/ci.yml"
+if [ ! -f "$yml" ]; then
+  echo "No existing $yml, skipping patch"; exit 0
+fi
+# Append steps after checkout to call our scripts; idempotent-ish.
+if ! grep -q "ci_migrate_v156.sh" "$yml"; then
+  cat >> "$yml" <<'EOF'
 
       - name: Migrate (DB+OPA up; alembic from /app/orchestrator)
         run: bash scripts/ci_migrate_v156.sh
@@ -34,3 +23,8 @@ jobs:
       - name: Print logs on fail
         if: failure()
         run: bash scripts/print_logs_on_fail_v156.sh
+EOF
+  echo "Patched $yml"
+else
+  echo "Patch already present in $yml"
+fi

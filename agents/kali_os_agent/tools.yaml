@@ -39,3 +39,34 @@ sqlmap_basic:
     timeout: 3600
     cmd: "sqlmap -u {{url}} --level {{level|default:2}} --risk {{risk|default:1}} --batch --random-agent --output-dir=sqlmap_out"
     artifacts: ["sqlmap_out/**"]
+
+tools:
+  gobuster_dns_safe:
+    active: true
+    cmd: >
+      gobuster dns -d {{ domain }} -w {{ wordlist|default("/usr/share/wordlists/dns/subdomains-top1million-5000.txt") }}
+      -t {{ threads|default(50) }} -o gobuster_dns.txt
+    timeout: 7200
+    artifacts:
+      - gobuster_dns.txt
+
+  ffuf_post_json:
+    active: true
+    cmd: >
+      ffuf -u {{ url }} -X POST -H 'Content-Type: application/json'
+      -d '{{ data|default("{}") }}'
+      -w {{ wordlist|default("/usr/share/seclists/Discovery/Web-Content/common.txt") }}
+      -mc {{ match_codes|default("200,204,302,401,403") }}
+      -of json -o ffuf_post.json
+    timeout: 7200
+    artifacts:
+      - ffuf_post.json
+
+  sqlmap_smart:
+    active: true
+    cmd: >
+      sqlmap -u {{ url }} --batch --smart --level {{ level|default(2) }}
+      --output-dir=sqlmap_out
+    timeout: 14400
+    artifacts:
+      - sqlmap_out/**
