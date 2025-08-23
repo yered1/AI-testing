@@ -1,0 +1,27 @@
+{
+  "id": "remote_kali_run_tool",
+  "title": "Remote (Kali) \u2014 Run Allowlisted Tool",
+  "category": "web",
+  "description": "Run an allowlisted offsec tool defined in the agent's tools.yaml.",
+  "tool_adapter": "run_tool",
+  "agent_kind": "kali_os",
+  "params_schema": {
+    "type": "object",
+    "properties": {
+      "tool": {
+        "type": "string",
+        "description": "tool id from tools.yaml, e.g., ffuf_dirb"
+      },
+      "url": {
+        "type": "string"
+      },
+      "wordlist": {
+        "type": "string",
+        "description": "path on Kali host (e.g., /usr/share/wordlists/dirb/common.txt)"
+      }
+    },
+    "required": [
+      "tool"
+    ]
+  }
+}

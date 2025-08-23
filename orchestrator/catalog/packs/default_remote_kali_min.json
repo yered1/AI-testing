@@ -1,0 +1,8 @@
+{
+  "id": "default_remote_kali_min",
+  "title": "Default \u2014 Remote Kali Minimal",
+  "tests": [
+    "remote_kali_nmap_tcp_top_1000",
+    "remote_kali_run_tool"
+  ]
+}

@@ -1,14 +1,15 @@
-# macOS / Python / Node junk
-__MACOSX/
-.DS_Store
-*.pyc
+# === ai-testing v1.4.2 junk filters ===
 __pycache__/
+*.py[cod]
 .pytest_cache/
 .mypy_cache/
-ui/node_modules/
-ui/dist/
-dist/
-build/
-.env
-infra/auth/.env.auth
-infra/auth/.env.auth.local
+.tox/
+.coverage*
+htmlcov/
+.DS_Store
+__MACOSX/
+Thumbs.db
+.idea/
+.vscode/
+# Local auth configs
+infra/auth/.env.auth*

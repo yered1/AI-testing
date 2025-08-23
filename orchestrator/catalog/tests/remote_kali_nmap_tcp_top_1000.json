@@ -1,0 +1,20 @@
+{
+  "id": "remote_kali_nmap_tcp_top_1000",
+  "title": "Remote (Kali) \u2014 Nmap TCP Top 1000",
+  "category": "network",
+  "description": "Run nmap top 1000 TCP ports from a remote Kali agent.",
+  "tool_adapter": "nmap_tcp_top_1000",
+  "agent_kind": "kali_os",
+  "params_schema": {
+    "type": "object",
+    "properties": {
+      "target": {
+        "type": "string",
+        "description": "IP or domain"
+      }
+    },
+    "required": [
+      "target"
+    ]
+  }
+}
