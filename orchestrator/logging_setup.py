@@ -1,8 +1,5 @@
-
-import logging
-import os
-
-_level = os.environ.get("LOG_LEVEL", "INFO").upper()
-fmt = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
-logging.basicConfig(level=getattr(logging, _level, logging.INFO), format=fmt)
-logging.getLogger("uvicorn").setLevel(getattr(logging, _level, logging.INFO))
+import logging, os
+def setup_logging():
+    level = os.environ.get("LOG_LEVEL","INFO").upper()
+    logging.basicConfig(level=getattr(logging, level, logging.INFO),
+                        format="%(asctime)s %(levelname)s %(name)s: %(message)s")

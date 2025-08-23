@@ -9,4 +9,4 @@ COPY schemas /app/schemas
 COPY policies /app/policies
 EXPOSE 8080
 WORKDIR /app/orchestrator
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uvicorn", "app_v2:app", "--host", "0.0.0.0", "--port", "8080"]

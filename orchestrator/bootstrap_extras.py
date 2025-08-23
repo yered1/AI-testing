@@ -1,4 +1,3 @@
-from . import logging_setup
 from .app_v2 import app
 from .routers import ui_brain
 from .routers import ui_builder

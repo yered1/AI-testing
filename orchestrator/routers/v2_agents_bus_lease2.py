@@ -1,52 +1,51 @@
-
 from fastapi import APIRouter, Depends, Header, Response, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-from typing import List, Optional
 from ..db import get_db
 from ..tenancy import set_tenant_guc
-import hashlib, datetime
+import hashlib
+from typing import List, Dict, Any, Optional
 
 router = APIRouter()
 
 def sha256_hex(s: str) -> str:
-    import hashlib as _h
-    return _h.sha256((s or "").encode()).hexdigest()
+    return hashlib.sha256((s or "").encode()).hexdigest()
 
 def _require_agent(db: Session, tenant_id: str, agent_id: str, agent_key: str):
     set_tenant_guc(db, tenant_id)
-    row = db.execute(text("SELECT id, agent_key_hash, status FROM agents WHERE id=:id"),
+    row = db.execute(text("SELECT id, agent_key_hash FROM agents WHERE id=:id"),
                      {"id": agent_id}).mappings().first()
     if not row or row["agent_key_hash"] != sha256_hex(agent_key):
         raise HTTPException(status_code=401, detail="invalid agent credentials")
-    # Update last_seen
-    db.execute(text("UPDATE agents SET last_seen=now(), status='online' WHERE id=:id"), {"id": agent_id})
-    db.commit()
 
-def _adapter_kind(adapter: str) -> str:
-    # map "semgrep_default" -> "semgrep", "zap_baseline"->"zap", "nuclei_default"->"nuclei"
-    if not adapter:
-        return ""
-    return (adapter.split("_", 1)[0] or "").lower()
+def adapter_to_kind(adapter: str) -> str:
+    a = (adapter or "").lower()
+    if a.startswith("zap_"):
+        return "zap"
+    if a.startswith("nuclei"):
+        return "nuclei"
+    if "semgrep" in a:
+        return "semgrep"
+    if a.startswith("mobile_") or "apk" in a:
+        return "mobile_apk"
+    # fallbacks
+    if a.startswith("nmap") or "network" in a:
+        return "network"
+    return "cross_platform"
 
 @router.post("/v2/agents/lease2")
-def agent_lease2(
-    kinds: Optional[List[str]] = None,
-    x_tenant_id: str = Header(alias="X-Tenant-Id"),
-    x_agent_id: str = Header(alias="X-Agent-Id"),
-    x_agent_key: str = Header(alias="X-Agent-Key"),
-    db: Session = Depends(get_db)
-):
-    """
-    Enhanced leasing endpoint that returns run/plan/engagement context.
-    Agents may optionally send a JSON body like {"kinds":["semgrep","zap"]}.
-    """
-    # FastAPI will pass body params only if declared; emulate optional body
-    # by reading directly if needed (compat with agents that send no body).
+def agent_lease2(body: Optional[Dict[str, Any]] = None,
+                 x_tenant_id: str = Header(alias="X-Tenant-Id"),
+                 x_agent_id: str = Header(alias="X-Agent-Id"),
+                 x_agent_key: str = Header(alias="X-Agent-Key"),
+                 db: Session = Depends(get_db)):
     _require_agent(db, x_tenant_id, x_agent_id, x_agent_key)
-    set_tenant_guc(db, x_tenant_id)
-
-    # Fetch a few queued jobs and filter in Python to respect 'kinds'
+    kinds = []
+    if isinstance(body, dict):
+        k = body.get("kinds")
+        if isinstance(k, list):
+            kinds = [str(i).lower() for i in k if i]
+    # Select a small window and lock to avoid races
     rows = db.execute(text("""
         SELECT id, run_id, plan_id, engagement_id, adapter, params
         FROM jobs
@@ -56,38 +55,26 @@ def agent_lease2(
         FOR UPDATE SKIP LOCKED
         LIMIT 50
     """)).mappings().all()
-
-    if not rows:
+    selected = None
+    for r in rows:
+        if kinds:
+            if adapter_to_kind(r["adapter"]) in kinds:
+                selected = r; break
+        else:
+            selected = r; break
+    if not selected:
+        # nothing matching
         return Response(status_code=204)
-
-    kinds_set = {k.lower() for k in (kinds or [])}
-    chosen = None
-    if kinds_set:
-        for r in rows:
-            if _adapter_kind(r["adapter"]) in kinds_set:
-                chosen = r; break
-    else:
-        # No kinds specified: choose the first
-        chosen = rows[0]
-
-    if not chosen:
-        # No matching job found
-        return Response(status_code=204)
-
     db.execute(text("""
-        UPDATE jobs
-        SET status='leased',
-            leased_by=:a,
-            lease_expires_at=now() + interval '10 minutes'
+        UPDATE jobs SET status='leased', leased_by=:a, lease_expires_at=now() + interval '5 minutes'
         WHERE id=:id
-    """), {"a": x_agent_id, "id": chosen["id"]})
+    """), {"a": x_agent_id, "id": selected["id"]})
     db.commit()
-
     return {
-        "id": chosen["id"],
-        "adapter": chosen["adapter"],
-        "params": chosen["params"],
-        "run_id": chosen["run_id"],
-        "plan_id": chosen["plan_id"],
-        "engagement_id": chosen["engagement_id"]
+        "id": selected["id"],
+        "adapter": selected["adapter"],
+        "params": selected["params"],
+        "run_id": selected["run_id"],
+        "plan_id": selected["plan_id"],
+        "engagement_id": selected["engagement_id"],
     }
