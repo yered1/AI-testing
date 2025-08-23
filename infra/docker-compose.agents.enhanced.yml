@@ -6,7 +6,7 @@ services:
       context: ..
       dockerfile: infra/agent.aws.Dockerfile
     environment:
-      ORCHESTRATOR_URL: ${ORCHESTRATOR_URL:-http://orchestrator:8080}
+      ORCH_URL: ${ORCH_URL:-http://orchestrator:8080}
       AGENT_TOKEN: ${AWS_AGENT_TOKEN}
       TENANT_ID: ${TENANT_ID:-t_demo}
       ALLOW_ACTIVE_SCAN: ${ALLOW_ACTIVE_SCAN:-0}
@@ -23,7 +23,7 @@ services:
       context: ..
       dockerfile: infra/agent.msf.Dockerfile
     environment:
-      ORCHESTRATOR_URL: ${ORCHESTRATOR_URL:-http://orchestrator:8080}
+      ORCH_URL: ${ORCH_URL:-http://orchestrator:8080}
       AGENT_TOKEN: ${MSF_AGENT_TOKEN}
       TENANT_ID: ${TENANT_ID:-t_demo}
       ALLOW_EXPLOITATION: ${ALLOW_EXPLOITATION:-0}

@@ -23,7 +23,7 @@ class ZAPAgent:
     """OWASP ZAP testing agent"""
     
     def __init__(self):
-        self.orchestrator_url = os.getenv("ORCHESTRATOR_URL", "http://localhost:8080")
+        self.orchestrator_url = os.getenv("ORCH_URL", "http://localhost:8080")
         self.agent_token = os.getenv("AGENT_TOKEN")
         self.agent_type = "zap"
         self.agent_name = os.getenv("AGENT_NAME", "zap-agent")

@@ -25,7 +25,7 @@ USER zap
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
-ENV ORCHESTRATOR_URL=http://orchestrator:8080
+ENV ORCH_URL=http://orchestrator:8080
 
 # Run agent
 CMD ["python3", "agent.py"]
